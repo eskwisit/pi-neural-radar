@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Neural Radar</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #050507;
+    --panel: rgba(12, 12, 16, 0.92);
+    --line: rgba(255, 255, 255, 0.08);
+    --text: #ececf1;
+    --muted: #8a8a96;
+    --need: #ff6b9a;
+    --approve: #ffc966;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.45 ui-sans-serif, -apple-system, "SF Pro Text", Inter, system-ui, sans-serif; overflow: hidden; }
+  canvas { position: fixed; inset: 0; display: block; }
+
+  .topbar { position: fixed; top: 18px; left: 22px; right: 22px; display: flex; align-items: center; gap: 12px; pointer-events: none; z-index: 3; }
+  .queue { display: flex; gap: 6px; pointer-events: auto; margin-left: auto; }
+  .chip { white-space: nowrap; display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--line); cursor: pointer; color: var(--text); font: inherit; font-size: 12px; }
+  .chip:hover { border-color: rgba(255,255,255,.22); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: currentColor; }
+  .controls { display: flex; gap: 6px; pointer-events: auto; }
+  .layouts { display: flex; gap: 4px; pointer-events: auto; }
+  .layouts button { font: inherit; font-size: 11.5px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  .layouts button.on { color: var(--text); border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.06); }
+  body.embed .queue, body.embed .controls, body.embed .layouts { display: none; }
+  .btn { font: inherit; font-size: 12px; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    padding: 5px 10px; border-radius: 7px; cursor: pointer; }
+  .btn:hover { background: rgba(255,255,255,.09); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  .btn.primary { background: #f2f2f5; color: #0b0b0e; border-color: transparent; font-weight: 600; }
+  .btn.danger { color: #ff9ab5; }
+  .btn.ghost { background: transparent; border-color: transparent; }
+
+
+  .panel { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; background: rgba(10, 10, 14, 0.96);
+    border-left: 1px solid var(--line); backdrop-filter: blur(16px); padding: 22px 20px;
+    overflow-y: auto; transform: translateX(100%); transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s; z-index: 6; }
+  .panel.open { transform: none; box-shadow: -24px 0 60px rgba(0,0,0,.55); }
+  .panel h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel .close { position: absolute; top: 12px; right: 12px; }
+  .status { display: inline-block; font-size: 11px; margin-top: 6px; letter-spacing: .04em; }
+  .meter { margin: 14px 0 4px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .meter > i { display: block; height: 100%; background: linear-gradient(90deg, #34d399, #2aa7a0, #4f6bed, #a855f7); transition: width .5s; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
+  .section { margin-top: 18px; }
+  .section h4 { margin: 0 0 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 500; }
+  .ask { border: 1px solid var(--line); background: rgba(255,255,255,.03); border-radius: 10px; padding: 12px; }
+  .ask p { margin: 0 0 10px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  textarea { width: 100%; resize: vertical; min-height: 54px; font: inherit; color: var(--text);
+    background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; outline: none; }
+  textarea:focus { border-color: rgba(255,255,255,.25); }
+  .sendrow { display: flex; justify-content: flex-end; margin-top: 6px; gap: 6px; align-items: center; }
+  .sendrow span { flex: 1; color: var(--muted); font-size: 11px; }
+  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sub { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .sub:last-child { border-bottom: 0; }
+  .sub .n { flex: 1; }
+  .sub .n small { display: block; color: var(--muted); }
+  .sub.hl { background: rgba(255,255,255,.04); border-radius: 6px; padding-left: 6px; }
+  .mini { font-size: 11px; padding: 3px 8px; }
+  .log { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: #a3a3ad;
+    max-height: 220px; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; overscroll-behavior: contain; padding-right: 4px; }
+  .log div { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .log .you { color: #d8c8ff; }
+  .log time { color: #55555f; margin-right: 6px; }
+  .fold { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+  .fold:hover { color: var(--text, #e6e6ea); }
+  .fold .caret { display: inline-block; transition: transform .15s; }
+  .fold.open .caret { transform: rotate(90deg); }
+  .ctx { color: var(--muted); font-size: 12px; margin: 0 0 8px; padding-left: 8px; border-left: 2px solid var(--line); }
+  .empty { color: var(--muted); font-size: 12px; }
+
+  .empty-state { position: fixed; left: 50%; top: 50%; transform: translate(-50%, 70px); color: var(--muted); font-size: 12px;
+    text-align: center; max-width: 320px; pointer-events: none; z-index: 2; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(10px); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 12px; font-size: 12px; opacity: 0; transition: opacity .2s, transform .2s; z-index: 8; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateX(-50%); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 2px; }
+  .chips span { font-size: 11.5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .note { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+  .btn.confirm { border-color: rgba(255,107,154,.6); color: #ffb3c8; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  @media (max-width: 760px) {
+    .topbar { left: 12px; right: 12px; top: 10px; flex-wrap: wrap; }
+    .queue { margin-left: 0; order: 3; width: 100%; overflow-x: auto; }
+    .controls { margin-left: auto; }
+    .panel { left: 0; width: auto; top: 30%; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; transform: translateY(100%); }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="topbar">
+  <div class="queue" id="queue"></div>
+</div>
+
+<div class="empty-state" id="emptyState"></div>
+
+<div class="toast" id="toast"></div>
+<aside class="panel" id="panel"></aside>
+
+<script>
+(() => {
+// ---------- copy: every visible string, in English and Simplified Chinese ----------
+const COPY = {
+  en: {
+    title: 'Neural Radar',
+    status_need: 'Needs you',
+    status_approve: 'Awaiting approval',
+    status_run: 'Working',
+    status_done: 'Done',
+    status_paused: 'Paused',
+    status_stopped: 'Stopped',
+    needsReply: 'Needs your reply',
+    subagent: 'subagent',
+    subagentsOne: '{n} subagent',
+    subagentsMany: '{n} subagents',
+    subsWorkingOne: '{n} subagent working',
+    subsWorkingMany: '{n} subagents working',
+    thisSession: 'this session',
+    waitingOnYou: '{n} waiting on you',
+    nothingWaiting: 'nothing waiting',
+    you: 'You',
+    youTag: 'you',
+    untitledSession: 'Untitled session',
+    questionForYou: 'Question for you',
+    moreQuestionsOne: '+{n} more question',
+    moreQuestionsMany: '+{n} more questions',
+    answerInSession: 'Answer in session →',
+    answerNote: 'PI-Desktop only lets you answer questions in the session itself.',
+    waitingReply: 'Waiting for your reply',
+    replyNote: 'Its turn is over and it asked you this. Your reply below goes straight to the agent.',
+    planWaiting: 'Plan waiting for approval',
+    goalWaiting: 'Goal waiting for approval',
+    planReady: 'Plan ready for approval',
+    goalReady: 'Goal ready for approval',
+    approve: 'Approve',
+    reject: 'Reject',
+    reviewInSession: 'Review in session',
+    approveNote: "Approving runs it in the session's current permission mode.",
+    replyToAgent: 'Reply to the agent',
+    messageAgent: 'Message the agent',
+    draftPlaceholder: 'e.g. Focus on the engine lib first',
+    sendHint: '⌘↵ sends',
+    prefill: 'Pre-fill in session',
+    sendToAgent: 'Send to agent',
+    intervene: 'Intervene',
+    openSession: 'Open session',
+    stop: 'Stop',
+    confirmStop: 'Confirm stop',
+    abort: 'Abort',
+    confirmAbort: 'Confirm abort',
+    stopNote: 'Stop finishes at the next safe point; Abort ends the turn now.',
+    subagentsHeading: 'Subagents ({n})',
+    toolCalls: '{n} tool calls',
+    lastTool: 'last {tool}',
+    noSubagents: 'No subagents in this turn',
+    activityHeading: 'Activity ({n})',
+    nothingYet: 'Nothing yet',
+    close: 'Close',
+    log_you: 'You: {text}',
+    log_launch: 'Launched {agent}: {text}',
+    log_ask: 'Asked you a question',
+    log_tool: 'Used {tool}',
+    log_toolRunning: 'Used {tool} …',
+    emptyConnecting: 'Waiting for the Neural Radar plugin…',
+    emptyError: 'PI-Desktop did not answer: {error}',
+    emptyNone: 'No agents running. The radar fills in as soon as an agent starts working.',
+    toastFailed: 'That did not go through',
+    toastSent: 'Sent to the agent',
+    toastSuggested: 'Suggested in the session composer',
+    toastApproved: 'Plan approved',
+    toastRejected: 'Plan rejected',
+    toastStop: 'Stop requested',
+    toastAborted: 'Turn aborted',
+    err_not_pending: 'This approval is no longer pending',
+  },
+  'zh-CN': {
+    title: '神经雷达',
+    status_need: '需要你处理',
+    status_approve: '等待批准',
+    status_run: '工作中',
+    status_done: '已完成',
+    status_paused: '已暂停',
+    status_stopped: '已停止',
+    needsReply: '等待你回复',
+    subagent: '子智能体',
+    subagentsOne: '{n} 个子智能体',
+    subagentsMany: '{n} 个子智能体',
+    subsWorkingOne: '{n} 个子智能体工作中',
+    subsWorkingMany: '{n} 个子智能体工作中',
+    thisSession: '当前会话',
+    waitingOnYou: '{n} 个在等你',
+    nothingWaiting: '没有待处理事项',
+    you: '你',
+    youTag: '你',
+    untitledSession: '未命名会话',
+    questionForYou: '向你提问',
+    moreQuestionsOne: '还有 {n} 个问题',
+    moreQuestionsMany: '还有 {n} 个问题',
+    answerInSession: '在会话中回答 →',
+    answerNote: 'PI-Desktop 只允许在会话内回答问题。',
+    waitingReply: '等待你的回复',
+    replyNote: '它的回合已结束，并向你提出了这个问题。你在下方的回复会直接发给智能体。',
+    planWaiting: '计划等待批准',
+    goalWaiting: '目标等待批准',
+    planReady: '计划待批准',
+    goalReady: '目标待批准',
+    approve: '批准',
+    reject: '拒绝',
+    reviewInSession: '在会话中查看',
+    approveNote: '批准后将以该会话当前的权限模式运行。',
+    replyToAgent: '回复智能体',
+    messageAgent: '给智能体发消息',
+    draftPlaceholder: '例如：先专注于 engine 库',
+    sendHint: '⌘↵ 发送',
+    prefill: '在会话中预填',
+    sendToAgent: '发送给智能体',
+    intervene: '干预',
+    openSession: '打开会话',
+    stop: '停止',
+    confirmStop: '确认停止',
+    abort: '中止',
+    confirmAbort: '确认中止',
+    stopNote: '“停止”会在下一个安全点结束；“中止”会立即结束本回合。',
+    subagentsHeading: '子智能体（{n}）',
+    toolCalls: '{n} 次工具调用',
+    lastTool: '最近：{tool}',
+    noSubagents: '本回合没有子智能体',
+    activityHeading: '活动（{n}）',
+    nothingYet: '暂无记录',
+    close: '关闭',
+    log_you: '你：{text}',
+    log_launch: '启动了 {agent}：{text}',
+    log_ask: '向你提了一个问题',
+    log_tool: '使用了 {tool}',
+    log_toolRunning: '正在使用 {tool}…',
+    emptyConnecting: '正在等待神经雷达插件…',
+    emptyError: 'PI-Desktop 没有响应：{error}',
+    emptyNone: '没有正在运行的智能体。智能体一开始工作，雷达就会显示出来。',
+    toastFailed: '操作未成功',
+    toastSent: '已发送给智能体',
+    toastSuggested: '已填入会话输入框',
+    toastApproved: '计划已批准',
+    toastRejected: '计划已拒绝',
+    toastStop: '已请求停止',
+    toastAborted: '本回合已中止',
+    err_not_pending: '此审批已不再等待处理',
+  },
+};
+// the host's language (appearance.locale, BCP-47), else the webview's
+const pickLocale = l => /^zh/i.test(String(l || '')) ? 'zh-CN' : 'en';
+let locale = pickLocale(navigator.language);
+function t(key, vars) {
+  const s = COPY[locale][key] ?? COPY.en[key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
+}
+const plural = (n, one, many) => t(n === 1 ? one : many, { n });
+const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s || ''));
+// an agent is named after its session, as in PI-Desktop's session list
+const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
+const descOf = a => a.desc || a.title || t('untitledSession');
+const taskOf = a => a.task || a.title || t('untitledSession');
+function logLine(l) {
+  switch (l.kind) {
+    case 'you': return t('log_you', { text: l.text || '' });
+    case 'launch': return t('log_launch', { agent: l.agent || t('subagent'), text: l.text || '' });
+    case 'ask': return t('log_ask');
+    case 'tool': return t(l.running ? 'log_toolRunning' : 'log_tool', { tool: l.tool || '' });
+    default: return String(l.text || '');
+  }
+}
+
+const ST = { need: '#ff6b9a', approve: '#ffc966', run: '#5eead4', paused: '#8a8f9c', done: '#6b7080', stopped: '#6b7080' };
+const YOU_SIGNAL = '#d8c8ff';
+const HANDOFF = '#8fb8ff'; // agent hands a task to a subagent
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const bg = document.createElement('canvas');
+const bgx = bg.getContext('2d');
+let W = 0, H = 0, DPR = 1, K = 1;
+
+// ---------- helpers ----------
+const now = () => performance.now() / 1000;
+const fmt = () => new Date().toTimeString().slice(0, 8);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function gauss() { return (Math.random() + Math.random() + Math.random() - 1.5) / 1.5; }
+function rgb(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+// Edge colour by distance from you: purple → blue → teal → green (as in the reference)
+const STOPS = [[0, rgb('#a855f7')], [0.4, rgb('#5b5fe0')], [0.68, rgb('#2a9fa5')], [1, rgb('#34d399')]];
+function grad(u) {
+  u = clamp(u, 0, 1);
+  for (let i = 1; i < STOPS.length; i++) if (u <= STOPS[i][0]) {
+    const [u0, c0] = STOPS[i - 1], [u1, c1] = STOPS[i], k = (u - u0) / (u1 - u0);
+    return [lerp(c0[0], c1[0], k) | 0, lerp(c0[1], c1[1], k) | 0, lerp(c0[2], c1[2], k) | 0];
+  }
+  return STOPS[STOPS.length - 1][1];
+}
+
+// ---------- layouts: same network, six ways to place you and the agents ----------
+// 1 Radar:   you at the centre; urgent, waiting and working agents on separate rings around you
+// 2 Flow:    you on the left; columns to the right: urgent, waiting, working, done
+// 3 Cascade: you at the top; rows below you, from urgent down to done
+// 4 Horizon: you at the bottom centre; agents on arcs above you, like a half radar
+// 5 Corner:  you in the lower-left corner; quarter arcs spread toward the upper right
+// 6 Band:    you at the lower left; agents along a diagonal band, drifting away as they need you less
+const params = new URLSearchParams(location.search);
+const LAYOUT = 1;
+const EMBED = false;
+const box = { x: 0, y: 0, w: 0, h: 0 }, boxT = { x: 0, y: 0, w: 0, h: 0 };
+// the area you and the agents live in: leaves room for the top bar, labels and side panel
+function computeView() {
+  const mobile = W < 760, availW = selected && W > 900 ? W - 400 : W;
+  const top = mobile ? 70 : 64, bottom = (mobile ? 64 : 70) + (LAYOUT === 4 || LAYOUT === 5 ? 50 : 0);
+  const side = mobile ? 44 : Math.max(130, availW * 0.09);
+  boxT.x = side; boxT.y = top; boxT.w = Math.max(160, availW - side * 2); boxT.h = Math.max(160, H - top - bottom);
+}
+// status tiers, each at its own distance from you so they never blur together
+function tierOf(a) { return { need: 0, approve: 1, run: 2, paused: 2, done: 3, stopped: 3 }[a.status] ?? 2; }
+const TIER_R = [0.44, 0.66, 0.87, 1.02];
+function youAnchor() {
+  const b = box;
+  if (LAYOUT === 2) return [b.x, b.y + b.h / 2];
+  if (LAYOUT === 3) return [b.x + b.w / 2, b.y];
+  if (LAYOUT === 4) return [b.x + b.w / 2, b.y + b.h];
+  if (LAYOUT === 5) return [b.x, b.y + b.h];
+  if (LAYOUT === 6) return [b.x, b.y + b.h * 0.85];
+  return [b.x + b.w / 2, b.y + b.h / 2];
+}
+// each agent keeps its own lane; when its status changes it only moves closer to you or further away
+function placeAgent(a) {
+  const b = box, [yx, yy] = youAnchor(), tier = tierOf(a);
+  const r = TIER_R[tier] + ((1 - a.attention) - 0.5) * 0.06;   // a small nudge inside its tier
+  const f = a.lane;
+  const polar = (R, th) => [yx + Math.cos(th) * r * R, yy + Math.sin(th) * r * R];
+  switch (LAYOUT) {
+    case 2: return [b.x + r * b.w, b.y + (0.08 + f * 0.84) * b.h];
+    case 3: return [b.x + (0.06 + f * 0.88) * b.w, b.y + r * b.h];
+    case 4: return polar(Math.min(b.w / 2, b.h), Math.PI + (0.08 + f * 0.84) * Math.PI);
+    case 5: return polar(Math.min(b.w, b.h), -Math.PI / 2 + (0.06 + f * 0.88) * Math.PI / 2);
+    case 6: {
+      const ex = b.x + b.w, ey = b.y + b.h * 0.12, L = Math.hypot(ex - yx, ey - yy);
+      const ux = (ex - yx) / L, uy = (ey - yy) / L, w = Math.min(b.h, b.w) * 0.62;
+      return [yx + ux * r * L - uy * (f - 0.5) * w, yy + uy * r * L + ux * (f - 0.5) * w];
+    }
+    default: return polar(Math.min(b.w, b.h) / 2, -Math.PI / 2 + f * Math.PI * 2);
+  }
+}
+function farDist() {
+  const b = box; let m = 1;
+  for (const [x, y] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) m = Math.max(m, Math.hypot(x - you.x, y - you.y));
+  return m;
+}
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  for (const c of [canvas, bg]) { c.width = W * DPR; c.height = H * DPR; }
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); bgx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  K = clamp(Math.min(W * 0.75, H) / 800, 0.7, 1.25);
+  computeView();
+  if (!box.w) Object.assign(box, boxT);
+  // flat dark background with the reference's soft purple / green wash
+  bgx.fillStyle = '#050507'; bgx.fillRect(0, 0, W, H);
+  const p = bgx.createRadialGradient(W * 0.08, H * 0.72, 0, W * 0.08, H * 0.72, W * 0.42);
+  p.addColorStop(0, 'rgba(124,58,237,0.16)'); p.addColorStop(1, 'rgba(124,58,237,0)');
+  bgx.fillStyle = p; bgx.fillRect(0, 0, W, H);
+  const g = bgx.createRadialGradient(W * 0.82, H * 0.3, 0, W * 0.82, H * 0.3, W * 0.4);
+  g.addColorStop(0, 'rgba(16,185,129,0.12)'); g.addColorStop(1, 'rgba(16,185,129,0)');
+  bgx.fillStyle = g; bgx.fillRect(0, 0, W, H);
+}
+
+// ---------- the network ----------
+function mkPt(owner, ox, oy, r, hub = false) {
+  return { owner, ox, oy, r, hub, ph: Math.random() * 6.28, f: 0.15 + Math.random() * 0.35, amp: 2 + Math.random() * 4, x: 0, y: 0, glow: 0 };
+}
+// tissue: points spread evenly over the whole screen and a little beyond, so lines run in from every border
+const filler = [];
+for (let i = 0; i < 380; i++) {
+  let best = null, bestD = -1;
+  for (let k = 0; k < 3; k++) {   // few candidates: random-looking, but without big holes
+    const x = -0.07 + Math.random() * 1.14, y = -0.07 + Math.random() * 1.14;
+    let dmin = Infinity;
+    for (const q of filler) { const d = ((q.nx - x) * 1.6) ** 2 + (q.ny - y) ** 2; if (d < dmin) dmin = d; }
+    if (dmin > bestD) { bestD = dmin; best = [x, y]; }
+  }
+  const p = mkPt(null, 0, 0, 0.9 + Math.random() * 1.1);
+  [p.nx, p.ny] = best;
+  filler.push(p);
+}
+const you = { x: 0, y: 0, flash: 0 };
+you.pts = [mkPt(you, 0, 0, 9.5, true), ...Array.from({ length: 28 }, () => {
+  const a = Math.random() * 6.28, r = 16 + Math.random() * 42;
+  return mkPt(you, Math.cos(a) * r, Math.sin(a) * r, 1.8 + Math.random() * 1.3);
+})];
+you.hub = you.pts[0];
+
+function clusterPts(owner, n, rad, hubR, pr = 1) {
+  return [mkPt(owner, 0, 0, hubR, true), ...Array.from({ length: n }, () => {
+    const a = Math.random() * 6.28, r = rad * (0.35 + Math.random() * 0.65);
+    return mkPt(owner, Math.cos(a) * r, Math.sin(a) * r, pr * (1 + Math.random() * 0.8));
+  })];
+}
+
+// ---------- live agents (fed by the plugin's main process) ----------
+const MAX_SUBS = 6;
+function mkSub(id, role) {
+  const s = { id, role, status: 'run', description: '', x: 0, y: 0, born: now(), seed: Math.random() * 10, dispatch: true };
+  s.pts = clusterPts(s, 5, 15, 3.8, 1.3); s.hub = s.pts[0];
+  return s;
+}
+const agents = [];
+const LANES = 12;
+// each agent keeps a lane (direction from you) for life: the free lane furthest from the others
+function pickLane() {
+  let best = 0.04, bestD = -1;
+  for (let i = 0; i < LANES; i++) {
+    const f = (i + 0.5) / LANES;
+    let d = 1;
+    for (const a of agents) { const x = Math.abs(a.lane - f); d = Math.min(d, x, 1 - x); }
+    if (d > bestD) { bestD = d; best = f; }
+  }
+  return best;
+}
+function mkAgent(id) {
+  const a = { id, role: 'agent', desc: '', title: '', task: '', status: 'run', attention: 0.2, target: 0.2, subs: [], log: [], x: NaN, y: NaN,
+    seed: Math.random() * 10, flash: 0, model: '', question: null, plan: null, active: false, lane: pickLane() };
+  a.pts = clusterPts(a, 15, 34, 6, 1.5); a.hub = a.pts[0];
+  return a;
+}
+
+let selected = null, selectedSub = null, hover = null;
+let solo = null; // the only agent on the radar: it is you, drawn as the centre node
+let draft = '', connected = null, panelSig = '', lastError = null;
+let logOpen = false; // the Activity section starts folded for each agent you open
+const simPaused = false, speed = 1;
+function attentionFor(s) { return { need: 0.93, approve: 0.75, run: 0.2, paused: 0.35, stopped: 0.03, done: 0.04 }[s] ?? 0.2; }
+
+function sync(model) {
+  const seen = new Set();
+  for (const m of model.agents || []) {
+    seen.add(m.id);
+    let a = agents.find(x => x.id === m.id);
+    if (!a) { a = mkAgent(m.id); agents.push(a); }
+    Object.assign(a, { role: m.role, desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
+    a.target = attentionFor(m.status);
+    const subSeen = new Set();
+    for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
+      subSeen.add(ms.id);
+      let s = a.subs.find(x => x.id === ms.id);
+      if (!s) { s = mkSub(ms.id, ms.role); a.subs.push(s); }
+      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, model: ms.model, toolCalls: ms.toolCalls, lastTool: ms.lastTool });
+    }
+    a.subs = a.subs.filter(s => subSeen.has(s.id));
+  }
+  for (let i = agents.length - 1; i >= 0; i--) {
+    if (seen.has(agents[i].id)) continue;
+    if (selected === agents[i].id) select(null);
+    agents.splice(i, 1);
+  }
+  solo = agents.length === 1 ? agents[0] : null;
+  lastError = model.error || null;
+  renderQueue(); renderEmpty();
+  // the drawer is rebuilt only when its agent's data changed, so clicks are never lost
+  const m = (model.agents || []).find(x => x.id === selected);
+  const sig = m ? JSON.stringify(m) : '';
+  if (selected && sig !== panelSig && document.activeElement?.id !== 'draft') { panelSig = sig; renderPanel(); }
+}
+
+// the page is shown when it has a size; hidden, it only keeps the state roughly current
+const shown = () => innerWidth > 0 && innerHeight > 0;
+let pullTimer = 0, pullSlow = false, pulling = false;
+async function pull() {
+  if (pulling) return;
+  pulling = true;
+  try {
+    const r = await window.pluginBridge.invoke('radar.state', {});
+    if (r && r.ok) { connected = true; sync(r.model); } else connected = false;
+  } catch { connected = false; }
+  pulling = false;
+  renderEmpty();
+  pullSlow = !shown();
+  clearTimeout(pullTimer);
+  pullTimer = setTimeout(pull, pullSlow ? 5000 : 1000);
+}
+
+// ---------- graph ----------
+let nodes = [], edges = [], adj = [], frameNo = 0;
+const MAX_DEG = 4;
+function buildGraph() {
+  for (const p of filler) p.off = p.x < -90 || p.x > W + 90 || p.y < -90 || p.y > H + 90;
+  nodes = [...you.pts, ...filler.filter(p => !p.off)];
+  for (const a of agents) { if (a !== solo) nodes.push(...a.pts); for (const s of a.subs) nodes.push(...s.pts); }
+  nodes.forEach((p, i) => { p.i = i; p.deg = 0; p.ideg = 0; p.edeg = 0; p.own = null; });
+  const spacing = Math.sqrt((W * 1.14) * (H * 1.14) / filler.length);
+  const thr = clamp(1.9 * spacing, 50, 150), cand = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i];
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+      const t2 = (thr * Math.max(a.sc || 1, b.sc || 1)) ** 2;
+      if (d2 < t2) cand.push([d2, a, b]);
+    }
+  }
+  cand.sort((p, q) => p[0] - q[0]);
+  edges = []; adj = nodes.map(() => []);
+  const add = (a, b, d) => { edges.push({ a, b, d }); adj[a.i].push(b.i); adj[b.i].push(a.i); a.deg++; b.deg++; };
+  // links inside a cluster and links out of it have separate budgets, so a cluster never seals itself off
+  for (const [d2, a, b] of cand) {
+    const d = Math.sqrt(d2) / (thr * Math.max(a.sc || 1, b.sc || 1));
+    if (a.owner && a.owner === b.owner) { if (a.ideg < 3 && b.ideg < 3) { add(a, b, d); a.ideg++; b.ideg++; } }
+    else if (a.owner && b.owner) continue; // clusters meet only through the tissue (plus the agent–subagent link)
+    else if (a.edeg < MAX_DEG && b.edeg < MAX_DEG) {
+      // a tissue point links to any one cluster only once, so no fans of parallel lines
+      const f = a.owner ? b : a, c = a.owner ? a : b;
+      if (c.owner) { f.own = f.own || new Set(); if (f.own.has(c.owner)) continue; f.own.add(c.owner); }
+      add(a, b, d); a.edeg++; b.edeg++;
+    }
+  }
+  // every point is woven in with at least 3 links, so nothing dangles as a single strand
+  const MIN_DEG = 3;
+  for (const p of nodes) {
+    if (p.deg >= MIN_DEG) continue;
+    const near = [];
+    for (const q of nodes) {
+      if (q === p || adj[p.i].includes(q.i) || (p.owner && q.owner && p.owner !== q.owner)) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
+      if (d2 < (thr * 1.6 * (p.sc || 1)) ** 2) near.push([d2, q]);
+    }
+    near.sort((x, y) => x[0] - y[0]);
+    for (const [d2, q] of near) { if (p.deg >= MIN_DEG) break; add(p, q, Math.sqrt(d2) / (thr * (p.sc || 1))); }
+  }
+  // a subagent is always wired to its agent
+  // a subagent is always wired to its agent (to you, when that agent is you)
+  for (const a of agents) for (const s of a.subs) add(s.hub, a === solo ? you.hub : a.hub, 0.5);
+  // one connected network: join every separate patch along the shortest available link
+  const par = new Int32Array(nodes.length).map((_, i) => i);
+  const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+  const unite = (x, y) => { x = find(x); y = find(y); if (x === y) return false; par[x] = y; return true; };
+  for (const e of edges) unite(e.a.i, e.b.i);
+  for (const [d2, a, b] of cand) {
+    if (a.owner && b.owner && a.owner !== b.owner) continue;
+    if (unite(a.i, b.i)) add(a, b, Math.sqrt(d2) / (thr * Math.max(a.sc || 1, b.sc || 1)));
+  }
+  for (let k = 0; k < 20; k++) {            // patches still out of reach: bridge to the nearest point of the main network
+    const root = find(you.hub.i);
+    let best = Infinity, bu = null, bv = null;
+    for (const u of nodes) {
+      if (find(u.i) === root) continue;
+      for (const v of nodes) {
+        if (find(v.i) !== root) continue;
+        const d2 = (u.x - v.x) ** 2 + (u.y - v.y) ** 2;
+        if (d2 < best) { best = d2; bu = u; bv = v; }
+      }
+    }
+    if (!bu) break;
+    add(bu, bv, clamp(Math.sqrt(best) / thr, 0, 1.4));
+    unite(bu.i, bv.i);
+  }
+  for (const p of nodes) p.hidden = p.deg === 0;
+}
+
+function shortestPath(src, dst) {
+  const n = nodes.length, dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), seen = new Uint8Array(n);
+  dist[src.i] = 0;
+  for (;;) {
+    let u = -1, best = Infinity;
+    for (let i = 0; i < n; i++) if (!seen[i] && dist[i] < best) { best = dist[i]; u = i; }
+    if (u < 0 || u === dst.i) break;
+    seen[u] = 1;
+    for (const v of adj[u]) {
+      const w = Math.hypot(nodes[u].x - nodes[v].x, nodes[u].y - nodes[v].y);
+      if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; prev[v] = u; }
+    }
+  }
+  if (!isFinite(dist[dst.i])) return null;
+  const path = [];
+  for (let v = dst.i; v >= 0; v = prev[v]) path.push(nodes[v]);
+  return path.reverse();
+}
+
+// ---------- signals (action potentials travelling through the mesh) ----------
+const spikes = [];
+function spike(src, dst, color, v, onArrive) {
+  const path = shortestPath(src, dst);
+  if (path && path.length > 1) spikes.push({ path, s: 0, v, color: rgb(color), onArrive });
+}
+function spontaneous() {
+  let p = filler[Math.floor(Math.random() * filler.length)];
+  if (p.hidden) return;
+  const path = [p];
+  for (let k = 0; k < 5; k++) {
+    const nb = adj[p.i]; if (!nb || !nb.length) break;
+    p = nodes[nb[Math.floor(Math.random() * nb.length)]];
+    if (path.includes(p)) break;
+    path.push(p);
+  }
+  if (path.length > 2) spikes.push({ path, s: 0, v: 140, color: [255, 255, 255], faint: true });
+}
+
+// ---------- update ----------
+function update(dt, t) {
+  for (const k of ['x', 'y', 'w', 'h']) box[k] = lerp(box[k], boxT[k], Math.min(1, dt * 4));
+  [you.x, you.y] = youAnchor();
+  you.flash = Math.max(0, you.flash - dt * 1.8);
+
+  // agent targets: distance along the network = 1 - attention
+  const targets = agents.map(a => {
+    a.attention = lerp(a.attention, a.target, Math.min(1, dt * 1.5));
+    return a === solo ? [you.x, you.y] : placeAgent(a);
+  });
+  const minSep = 110 * K;
+  for (let it = 0; it < 3; it++) for (let i = 0; i < agents.length; i++) for (let j = i + 1; j < agents.length; j++) {
+    const A = targets[i], B = targets[j], dx = B[0] - A[0], dy = B[1] - A[1], d = Math.hypot(dx, dy) || 1;
+    if (d < minSep) { const p = (minSep - d) / 2, ux = dx / d, uy = dy / d; A[0] -= ux * p; A[1] -= uy * p; B[0] += ux * p; B[1] += uy * p; }
+  }
+  const R = Math.min(box.w, box.h) / 2;
+  const subT = [];
+  agents.forEach((a, i) => {
+    if (isNaN(a.x)) { a.x = targets[i][0] + (a === solo ? 0 : 60); a.y = targets[i][1]; }
+    a.x = lerp(a.x, targets[i][0], Math.min(1, dt * 1.8));
+    a.y = lerp(a.y, targets[i][1], Math.min(1, dt * 1.8));
+    a.flash = Math.max(0, a.flash - dt * 1.8);
+    const away = Math.atan2(a.y - you.y, a.x - you.x), n = a.subs.length;
+    a.subs.forEach((s, k) => {
+      const grow = Math.min(1, (now() - s.born) * 1.2);
+      let cx, cy, ang, dd;
+      if (a === solo) {
+        // you are the agent: your subagents sit around you, the working ones closer in
+        cx = you.x; cy = you.y;
+        ang = -Math.PI / 2 + 0.4 + (k / Math.max(n, 1)) * Math.PI * 2;
+        dd = R * (s.status === 'run' ? 0.6 : 0.85) * grow;
+      } else {
+        // subagents sit behind the agent, away from you
+        cx = a.x; cy = a.y;
+        ang = away + (n > 1 ? (k / (n - 1) - 0.5) * 1.5 : 0);
+        dd = (70 + (k % 2) * 22) * K * grow;
+      }
+      subT.push({ s, cx, cy, ang, dd, tx: cx + Math.cos(ang) * dd, ty: cy + Math.sin(ang) * dd });
+    });
+  });
+  // a finished subagent never covers anything still active: it slides out along its spoke
+  // (nudging its angle if needed) until its node and label clear every working subagent,
+  // every agent and You
+  const pad = 6 * K;
+  const hit = (r, q) => !(r.x > q.x + q.w + pad || r.x + r.w + pad < q.x || r.y > q.y + q.h + pad || r.y + r.h + pad < q.y);
+  const subBox = (s, x, y) => {
+    const w = Math.max(s.label?.w || 70, 36 * K), h = s.label?.h || 30;
+    return { x: x - w / 2, y: y - 18 * K, w, h: 38 * K + h };
+  };
+  const around = (x, y, r) => ({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
+  const blockers = [around(you.x, you.y, 50 * K)];
+  if (you.label) blockers.push(you.label);
+  for (const a of agents) {
+    if (a === solo) continue;
+    blockers.push(around(a.x, a.y, 40 * K));
+    if (a.label) blockers.push(a.label);
+  }
+  for (const q of subT) if (q.s.status === 'run') blockers.push(subBox(q.s, q.tx, q.ty));
+  const clear = (s, x, y) => { const r = subBox(s, x, y); return !blockers.some(b => hit(r, b)); };
+  for (const q of subT) {
+    if (q.s.status === 'run' || clear(q.s, q.tx, q.ty)) continue;
+    search: for (let step = 1; step <= 40; step++) {
+      const d = q.dd + step * 10 * K;
+      for (const da of [0, 0.2, -0.2, 0.4, -0.4]) {
+        const x = q.cx + Math.cos(q.ang + da) * d, y = q.cy + Math.sin(q.ang + da) * d;
+        if (clear(q.s, x, y)) { q.tx = x; q.ty = y; break search; }
+      }
+    }
+  }
+  for (const { s, tx, ty } of subT) {
+    s.x = s.x ? lerp(s.x, tx, Math.min(1, dt * 4)) : tx; s.y = s.y ? lerp(s.y, ty, Math.min(1, dt * 4)) : ty;
+  }
+
+  // point positions with a slow organic drift
+  const place = (p, bx, by, scale = 1) => {
+    p.x = bx + p.ox * scale + Math.sin(t * p.f + p.ph) * p.amp;
+    p.y = by + p.oy * scale + Math.cos(t * p.f * 0.8 + p.ph) * p.amp;
+  };
+  for (const p of filler) place(p, p.nx * W, p.ny * H);
+  for (const p of you.pts) place(p, you.x, you.y, K);
+  you.hub.x = you.x; you.hub.y = you.y;
+  for (const a of agents) {
+    for (const p of a.pts) place(p, a.x, a.y, K);
+    a.hub.x = a.x; a.hub.y = a.y;
+    for (const s of a.subs) { for (const p of s.pts) place(p, s.x, s.y, K); s.hub.x = s.x; s.hub.y = s.y; }
+  }
+
+  if (frameNo++ % 3 === 0 || !edges.length) buildGraph(); // the mesh changes slowly
+
+  // fire
+  if (!simPaused) {
+    for (const a of agents) {
+      const asking = a.status === 'need' || a.status === 'approve';
+      const hub = a === solo ? you.hub : a.hub;
+      const rate = asking ? 1.1 * a.attention : a.status === 'run' ? 0.12 : 0;
+      if (Math.random() < rate * dt * speed) {
+        if (a === solo) you.flash = Math.max(you.flash, asking ? 1 : 0.5); // you are the agent: you light up
+        else {
+          a.flash = 1;
+          spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
+        }
+      }
+      for (const s of a.subs) {
+        if (s.dispatch) { s.dispatch = false; spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
+        if (s.status !== 'run') continue;
+        if (Math.random() < 0.35 * dt * speed) spikes.push({ path: [s.hub, hub], s: 0, v: 120 * K, color: [255, 255, 255] });
+        else if (Math.random() < 0.08 * dt * speed) spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) });
+      }
+    }
+  }
+  for (let i = spikes.length - 1; i >= 0; i--) {
+    const sp = spikes[i];
+    sp.s += sp.v * dt * (simPaused ? 0 : 1);
+    if (sp.s >= pathLen(sp.path) + 60) { sp.onArrive?.(); spikes.splice(i, 1); }
+  }
+}
+function pathLen(path) { let L = 0; for (let i = 1; i < path.length; i++) L += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y); return L; }
+
+// ---------- draw ----------
+function edgeFade(x, y) {
+  const m = Math.min(x, W - x, y, H - y), zone = Math.min(W, H) * 0.2;
+  return Math.pow(clamp(m / zone, 0, 1), 1.4);
+}
+function ownerAgent(p) {
+  const o = p.owner;
+  if (!o || o === you) return null;
+  return o.pts && o.subs ? o : agents.find(a => a.subs.includes(o)) || null;
+}
+function isDim(p) {
+  const o = p.owner; if (!o || o === you) return false;
+  return o.status === 'done' || o.status === 'stopped' || o.status === 'paused';
+}
+
+function draw(time) {
+  ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, W, H);
+  {
+    const R0 = farDist();
+    const g1 = ctx.createRadialGradient(you.x, you.y, 0, you.x, you.y, R0 * 0.6);
+    g1.addColorStop(0, 'rgba(124,58,237,0.20)'); g1.addColorStop(1, 'rgba(124,58,237,0)');
+    ctx.fillStyle = g1; ctx.fillRect(0, 0, W, H);
+    const g2 = ctx.createRadialGradient(you.x, you.y, R0 * 0.55, you.x, you.y, R0 * 1.35);
+    g2.addColorStop(0, 'rgba(16,185,129,0)'); g2.addColorStop(0.45, 'rgba(16,185,129,0.07)'); g2.addColorStop(1, 'rgba(16,185,129,0)');
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+  }
+  const maxD = farDist() * 1.1;
+  const focus = selected ? agents.find(a => a.id === selected) : hover?.a || null;
+
+  // connections
+  ctx.lineCap = 'round';
+  for (const e of edges) {
+    if (e.a.hidden || e.b.hidden) continue;
+    const mx = (e.a.x + e.b.x) / 2, my = (e.a.y + e.b.y) / 2;
+    const [r, g, b] = grad(Math.hypot(mx - you.x, my - you.y) / maxD);
+    let alpha = 0.1 + 0.34 * Math.pow(1 - clamp(e.d, 0, 1), 0.7);
+    if (!e.a.owner && !e.b.owner) alpha *= edgeFade(mx, my);
+    if (alpha < 0.004) continue;
+    if (isDim(e.a) && isDim(e.b)) alpha *= 0.45;
+    if (focus && (ownerAgent(e.a) === focus || ownerAgent(e.b) === focus)) alpha = Math.min(0.85, alpha * 2.4);
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+  }
+
+  // signals: a bright segment that runs along real edges of the mesh
+  for (const sp of spikes) {
+    const trail = 70 * K, head = sp.s;
+    let c = 0;
+    const [r, g, b] = sp.color, base = sp.faint ? 0.45 : 0.95;
+    for (let i = 1; i < sp.path.length; i++) {
+      const A = sp.path[i - 1], B = sp.path[i], L = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+      const s0 = Math.max(c, head - trail), s1 = Math.min(c + L, head);
+      if (s1 > s0) {
+        const k0 = (s0 - c) / L, k1 = (s1 - c) / L;
+        const x0 = lerp(A.x, B.x, k0), y0 = lerp(A.y, B.y, k0), x1 = lerp(A.x, B.x, k1), y1 = lerp(A.y, B.y, k1);
+        const gr = ctx.createLinearGradient(x0, y0, x1, y1);
+        const a0 = base * (1 - (head - s0) / trail), a1 = base * (1 - (head - s1) / trail);
+        gr.addColorStop(0, `rgba(${r},${g},${b},${Math.max(0, a0)})`); gr.addColorStop(1, `rgba(${r},${g},${b},${Math.max(0, a1)})`);
+        ctx.strokeStyle = gr; ctx.lineWidth = sp.faint ? 0.9 : 1.5;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      }
+      if (head >= c && head <= c + L) {
+        const k = (head - c) / L;
+        ctx.fillStyle = `rgba(${r},${g},${b},${base})`;
+        ctx.beginPath(); ctx.arc(lerp(A.x, B.x, k), lerp(A.y, B.y, k), sp.faint ? 1.3 : 2, 0, 7); ctx.fill();
+      }
+      c += L;
+    }
+  }
+
+  // points
+  const drawPoint = (p, alpha = 0.9) => {
+    let r = p.r, col = '#ffffff';
+    if (isDim(p)) alpha = Math.min(alpha, 0.4);
+    if (!p.owner) { alpha *= edgeFade(p.x, p.y); if (alpha < 0.01) return; }
+    if (p.hub && p.owner !== you) {
+      const o = p.owner;
+      col = ST[o.status] || '#ffffff';
+      if (o.status === 'need' || o.status === 'approve') r = p.r + 1.2 * (0.5 + 0.5 * Math.sin(time * 3 + o.seed));
+      if (o.flash) r += o.flash * 1.8;
+    }
+    if (p.owner === you && p.hub) {
+      r = p.r + you.flash * 2.5;
+      // you are the agent: the centre takes its colour while it waits for you
+      if (solo && (solo.status === 'need' || solo.status === 'approve')) { col = ST[solo.status]; r += 1.4 * (0.5 + 0.5 * Math.sin(time * 3 + solo.seed)); }
+    }
+    ctx.globalAlpha = alpha; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
+  };
+  for (const p of nodes) if (!p.hidden) drawPoint(p);
+  ctx.globalAlpha = 1;
+  // repaint an agent's (or your) own cluster over the labels beneath it, so it keeps its layer
+  const redrawCluster = o => {
+    ctx.lineWidth = 0.8; ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    for (const e of edges) {
+      if (e.a.owner !== o || e.b.owner !== o || e.a.hidden || e.b.hidden) continue;
+      ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+    }
+    for (const p of o.pts) if (!p.hidden) drawPoint(p);
+    ctx.globalAlpha = 1;
+  };
+
+  // labels sit on small dark pills so they read over the mesh
+  ctx.textBaseline = 'alphabetic';
+  const pill = (x, y, w, h, alpha = 1, accent = null) => {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(12,12,18,0.82)'; ctx.strokeStyle = accent || 'rgba(255,255,255,0.09)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 7); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+  const statusText = a => {
+    const n = a.subs.filter(x => x.status === 'run').length;
+    return `${a.reply ? t('needsReply') : statusLabel(a.status)}${n ? ` · ${plural(n, 'subagentsOne', 'subagentsMany')}` : ''}`;
+  };
+  // stacking order, bottom to top: subagents < agents < You (main). Later draws cover earlier ones.
+  // agent label layout first, so the You label can dodge it and subagents can be drawn underneath
+  const availW = selected && W > 900 ? W - 400 : W;
+  const agentLabels = [];
+  for (const a of agents) {
+    if (a === solo) { a.label = null; continue; }
+    // line 1: the session title and status; line 2: what it works on
+    const stat = ' · ' + statusText(a) + (a.active ? ' · ' + t('thisSession') : '');
+    const desc = clip(descOf(a), 44), name = nameOf(a);
+    ctx.font = '600 11.5px ui-sans-serif, system-ui'; const wn = ctx.measureText(name).width;
+    ctx.font = '10.5px ui-sans-serif, system-ui'; const ws = ctx.measureText(stat).width, wd = ctx.measureText(desc).width;
+    const pw = Math.max(wn + ws, wd) + 20, ph = 38;
+    const right = a.x >= you.x ? a.x + 46 * K + pw < availW : a.x - 46 * K - pw < 0;
+    const px = right ? a.x + 46 * K - 10 : a.x - 46 * K - pw + 10, py = a.y - 16;
+    a.label = { x: px, y: py, w: pw, h: ph };
+    agentLabels.push({ a, stat, desc, name, wn, px, py, pw, ph });
+  }
+
+  // 1) subagents (bottom): role and what they were asked to do; finished ones first, so the
+  //    working ones always paint over them
+  for (const done of [true, false]) for (const a of agents) {
+    const focused = focus === a;
+    for (const s of a.subs) {
+      if ((s.status !== 'run') !== done) continue;
+      const off = s.status !== 'run';
+      const role = s.role || t('subagent'), d = clip(s.description, 30);
+      ctx.font = '600 10px ui-sans-serif, system-ui'; const w1 = ctx.measureText(role).width;
+      ctx.font = '9.5px ui-sans-serif, system-ui'; const w2 = d ? ctx.measureText(d).width : 0;
+      const sw = Math.max(w1, w2) + 14, sh = d ? 30 : 17, sx = s.x - sw / 2, sy = s.y + 20 * K;
+      const alpha = (off ? 0.55 : 0.9) * (focused ? 1 : 0.85);
+      pill(sx, sy, sw, sh, alpha, focused && selectedSub === s.id ? 'rgba(255,255,255,0.45)' : null);
+      s.label = { x: sx, y: sy, w: sw, h: sh };
+      ctx.textAlign = 'center'; ctx.globalAlpha = alpha;
+      ctx.font = '600 10px ui-sans-serif, system-ui'; ctx.fillStyle = ST[s.status] || '#d2d2dc';
+      ctx.fillText(role, s.x, sy + 12);
+      if (d) { ctx.font = '9.5px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(220,220,230,0.85)'; ctx.fillText(d, s.x, sy + 25); }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // 2) agents (middle): node and label are painted over any subagent label beneath
+  for (const { a, stat, desc, name, wn, px, py, pw, ph } of agentLabels) {
+    const dim = a.status === 'done' || a.status === 'stopped';
+    redrawCluster(a);
+    const open = selected === a.id;
+    pill(px, py, pw, ph, dim ? 0.6 : 1, open ? 'rgba(255,255,255,0.45)' : (a.status === 'need' || a.status === 'approve') ? ST[a.status] + '66' : null);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = dim ? 0.6 : 1;
+    ctx.font = '600 11.5px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    ctx.fillText(name, px + 10, a.y - 1);
+    ctx.font = '10.5px ui-sans-serif, system-ui'; ctx.fillStyle = ST[a.status];
+    ctx.fillText(stat, px + 10 + wn, a.y - 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.62)';
+    ctx.fillText(desc, px + 10, a.y + 13);
+    ctx.globalAlpha = 1;
+  }
+
+  // 3) You / main (top)
+  let lyou = 74 * K;
+  const waiting = agents.filter(a => a.status === 'need' || a.status === 'approve').length;
+  // a single agent is you: the You label carries its status and what it works on
+  const ysub = solo ? statusText(solo) : waiting ? t('waitingOnYou', { n: waiting }) : t('nothingWaiting');
+  const ydesc = solo ? clip(descOf(solo), 48) : '';
+  const youText = t('you');
+  ctx.font = '600 13px ui-sans-serif, system-ui'; const yw1 = ctx.measureText(youText).width;
+  ctx.font = '10.5px ui-sans-serif, system-ui'; const yw2 = ctx.measureText(ysub).width, yw3 = ydesc ? ctx.measureText(ydesc).width : 0;
+  const ypw = Math.max(yw1, yw2, yw3) + 20, yph = ydesc ? 52 : 38;
+  // put the You label above you when an agent's label sits where it would go
+  const youRect = dy => ({ x: you.x - ypw / 2, y: you.y + dy - 15, w: ypw, h: yph });
+  const overlaps = r => agents.some(a => a.label && !(r.x > a.label.x + a.label.w || r.x + r.w < a.label.x || r.y > a.label.y + a.label.h || r.y + r.h < a.label.y));
+  if (overlaps(youRect(lyou)) && !overlaps(youRect(-74 * K - yph + 16))) lyou = -74 * K - yph + 16;
+  you.label = youRect(lyou);
+  redrawCluster(you);
+  const soloAsks = solo && (solo.status === 'need' || solo.status === 'approve');
+  pill(you.x - ypw / 2, you.y + lyou - 15, ypw, yph, 1, solo && selected === solo.id ? 'rgba(255,255,255,0.45)' : soloAsks ? ST[solo.status] + '66' : null);
+  ctx.textAlign = 'center';
+  ctx.font = '600 13px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.96)';
+  ctx.fillText(youText, you.x, you.y + lyou);
+  ctx.font = '10.5px ui-sans-serif, system-ui'; ctx.fillStyle = solo ? ST[solo.status] : 'rgba(216,200,255,0.85)';
+  ctx.fillText(ysub, you.x, you.y + lyou + 15);
+  if (ydesc) { ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.fillText(ydesc, you.x, you.y + lyou + 29); }
+}
+
+let last = now(), lastStep = 0;
+function step() {
+  // the work panel may mount this page hidden (0×0) and later show it without a resize event
+  if (innerWidth !== W || innerHeight !== H) resize();
+  const t = now();
+  const dt = Math.min(0.05, t - last); last = t;
+  update(dt, t);
+  draw(t);
+  lastStep = performance.now();
+}
+function frame() { step(); requestAnimationFrame(frame); }
+// The host can attach this page without telling Chromium it became visible, which pauses
+// requestAnimationFrame. A timer keeps the picture alive until animation frames resume.
+// It only runs while the page has a size: a hidden work panel is 0×0 and needs no drawing.
+setInterval(() => {
+  if (!shown()) return;
+  if (pullSlow) { clearTimeout(pullTimer); pull(); } // just became visible: fetch now
+  if (performance.now() - lastStep > 400) step();
+}, 250);
+addEventListener('focus', () => step());
+
+// ---------- interaction ----------
+function hitTest(x, y) {
+  const order = [...agents].sort((p, q) => q.attention - p.attention);
+  const inRect = L => L && x >= L.x && x <= L.x + L.w && y >= L.y && y <= L.y + L.h;
+  // same order as drawn, top first: You (main) > agents > subagents
+  const onYou = Math.hypot(x - you.x, y - you.y) < 62 * K || inRect(you.label);
+  // a single agent is you: the centre stands for it
+  if (onYou) return solo ? { a: solo, you: true } : { you: true };
+  for (const a of order) {
+    if (a === solo) continue;
+    if (Math.hypot(x - a.x, y - a.y) < 42 * K || inRect(a.label)) return { a };
+  }
+  for (const a of order) for (const s of a.subs) if (Math.hypot(x - s.x, y - s.y) < 20 * K || inRect(s.label)) return { a, s };
+  return null;
+}
+canvas.addEventListener('mousemove', e => {
+  hover = hitTest(e.clientX, e.clientY);
+  canvas.style.cursor = hover ? 'pointer' : 'default';
+});
+canvas.addEventListener('mouseleave', () => { hover = null; });
+canvas.addEventListener('click', e => {
+  const h = hitTest(e.clientX, e.clientY);
+  if (!h) { select(null); return; }
+  if (h.a && !h.s && selected === h.a.id) { select(null); return; } // clicking the open agent again closes the drawer
+  if (!h.a) {
+    // clicking You toggles the drawer: close it when open, otherwise open the agent that needs you most
+    if (selected) { select(null); return; }
+    const top = [...agents].sort((p, q) => q.attention - p.attention)[0];
+    if (top) select(top.id);
+    return;
+  }
+  select(h.a.id, h.s?.id || null);
+});
+addEventListener('keydown', e => { if (e.key === 'Escape') select(null); });
+addEventListener('resize', () => { resize(); });
+// the work panel can mount this page while it is hidden (0×0); size the canvas whenever the panel really shows
+new ResizeObserver(() => { if (innerWidth !== W || innerHeight !== H) resize(); }).observe(document.documentElement);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resize(); });
+
+function select(id, subId = null) {
+  if (selected !== id) { draft = ''; logOpen = false; }
+  selected = id; selectedSub = subId; panelSig = '';
+  computeView();
+  renderPanel();
+}
+
+// ---------- intervention: your signal travels back through the network to the agent ----------
+function fire(a, color = YOU_SIGNAL) {
+  you.flash = 1;
+  spike(you.hub, a.hub, color, 300 * K, () => { a.flash = 1; });
+}
+let toastTimer = 0;
+function toast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+async function act(a, payload, color, done) {
+  fire(a, color);
+  try {
+    const r = await window.pluginBridge.invoke('radar.action', { sessionId: a.id, ...payload });
+    if (!r?.ok) toast(r?.code && COPY.en['err_' + r.code] ? t('err_' + r.code) : r?.message || t('toastFailed'));
+    else if (done) toast(done);
+    return r;
+  } catch (e) { toast(String(e?.message || e)); }
+}
+
+// ---------- DOM ----------
+const panel = document.getElementById('panel');
+const queueEl = document.getElementById('queue');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const clock = t => t ? new Date(t).toTimeString().slice(0, 8) : '';
+
+function renderEmpty() {
+  const el = document.getElementById('emptyState');
+  el.textContent = connected === false ? t('emptyConnecting')
+    : lastError ? t('emptyError', { error: lastError })
+    : agents.length ? '' : t('emptyNone');
+}
+
+function renderQueue() {
+  const waiting = agents.filter(a => a.status === 'need' || a.status === 'approve').sort((a, b) => b.attention - a.attention);
+  queueEl.innerHTML = waiting.map(a => `<button class="chip" data-id="${esc(a.id)}"><span class="dot" style="color:${ST[a.status]}"></span>${esc(a === solo ? t('you') : nameOf(a, 24))} · ${esc(clip(descOf(a), 32))}</button>`).join('');
+  queueEl.querySelectorAll('[data-id]').forEach(b => b.onclick = () => select(selected === b.dataset.id ? null : b.dataset.id));
+}
+
+const armed = new Map(); // two-step confirmation for Stop / Abort
+function renderPanel() {
+  const a = agents.find(x => x.id === selected);
+  if (!a) { panel.classList.remove('open'); selected = null; computeView(); return; }
+  const focused = document.activeElement?.id === 'draft';
+  const logScroll = panel.querySelector('.log')?.scrollTop ?? 0;
+  const col = ST[a.status];
+  const live = a.status !== 'done';
+  const q = a.question, p = a.plan;
+  const nRun = a.subs.filter(s => s.status === 'run').length;
+  const armedStop = armed.get('stop') === a.id, armedAbort = armed.get('abort') === a.id;
+  panel.innerHTML = `
+    <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
+    <h2><span class="dot" style="color:${col}"></span>${esc(nameOf(a, 40))}${a === solo ? `<span style="color:var(--muted);font-weight:400">${esc(t('youTag'))}</span>` : ''}</h2>
+    <div style="color:var(--muted);margin-top:4px">${esc(taskOf(a))}</div>
+    <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
+    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+
+    ${q ? `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
+      <div class="ask">${q.ctx ? `<div class="ctx">${esc(q.ctx)}</div>` : ''}<p>${esc(q.q)}</p>
+        ${q.opts?.length ? `<div class="chips">${q.opts.map(o => `<span>${esc(o)}</span>`).join('')}</div>` : ''}
+        ${q.more ? `<div class="note">${esc(plural(q.more, 'moreQuestionsOne', 'moreQuestionsMany'))}</div>` : ''}
+        <div class="row"><button class="btn primary" data-act="open">${esc(t('answerInSession'))}</button></div>
+        <div class="note">${esc(t('answerNote'))}</div>
+      </div></div>` : ''}
+
+    ${a.reply ? `<div class="section"><h4>${esc(t('waitingReply'))}</h4>
+      <div class="ask">${a.replyContext ? `<div class="ctx">${esc(a.replyContext)}</div>` : ''}<p>${esc(a.reply)}</p>
+        <div class="note">${esc(t('replyNote'))}</div>
+      </div></div>` : ''}
+
+    ${p ? `<div class="section"><h4>${esc(t(p.kind === 'goal' ? 'goalWaiting' : 'planWaiting'))}</h4>
+      <div class="ask"><p>${esc(p.title || t(p.kind === 'goal' ? 'goalReady' : 'planReady'))}</p>${p.question ? `<div class="note">${esc(p.question)}</div>` : ''}
+        <div class="row"><button class="btn primary" data-act="approve">${esc(t('approve'))}</button><button class="btn danger" data-act="reject">${esc(t('reject'))}</button><button class="btn" data-act="open">${esc(t('reviewInSession'))}</button></div>
+        <div class="note">${esc(t('approveNote'))}</div>
+      </div></div>` : ''}
+
+    ${live || a.reply ? `<div class="section"><h4>${esc(t(a.reply ? 'replyToAgent' : 'messageAgent'))}</h4>
+      <textarea id="draft" placeholder="${esc(t('draftPlaceholder'))}">${esc(draft)}</textarea>
+      <div class="sendrow"><span>${esc(t('sendHint'))}</span><button class="btn" data-act="prefill">${esc(t('prefill'))}</button><button class="btn primary" data-act="send">${esc(t('sendToAgent'))}</button></div></div>` : ''}
+
+    <div class="section"><h4>${esc(t('intervene'))}</h4>
+      <div class="actions">
+        <button class="btn" data-act="open">${esc(t('openSession'))}</button>
+        <button class="btn danger ${armedStop ? 'confirm' : ''}" data-act="stop" ${live && !a.reply ? '' : 'disabled'}>${esc(t(armedStop ? 'confirmStop' : 'stop'))}</button>
+        <button class="btn danger ${armedAbort ? 'confirm' : ''}" data-act="abort" ${live && !a.reply ? '' : 'disabled'}>${esc(t(armedAbort ? 'confirmAbort' : 'abort'))}</button>
+      </div>
+      <div class="note">${esc(t('stopNote'))}</div></div>
+
+    <div class="section"><h4>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
+      ${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
+          <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
+          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}</small></div>
+        </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}
+    </div>
+
+    <div class="section"><h4 class="fold ${logOpen ? 'open' : ''}" data-act="log" role="button" tabindex="0" aria-expanded="${logOpen}"><span class="caret">▸</span>${esc(t('activityHeading', { n: (a.log || []).length }))}</h4>
+      ${logOpen ? `<div class="log">${(a.log || []).map(l => `<div class="${l.kind === 'you' ? 'you' : ''}"><time>${clock(l.t)}</time>${esc(logLine(l))}</div>`).join('') || `<div class="empty">${esc(t('nothingYet'))}</div>`}</div>` : ''}
+    </div>`;
+  panel.classList.add('open');
+  const logEl = panel.querySelector('.log');
+  if (logEl) logEl.scrollTop = logScroll;
+
+  const ta = panel.querySelector('#draft');
+  if (ta) {
+    ta.oninput = () => { draft = ta.value; };
+    ta.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(a); } };
+    if (focused) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+  panel.querySelectorAll('[data-act]').forEach(b => b.onclick = () => onAction(a, b.dataset.act));
+  panel.querySelector('.fold')?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction(a, 'log'); } });
+}
+
+function send(a) {
+  const text = draft.trim();
+  if (!text) return;
+  draft = '';
+  act(a, { action: 'send', text }, YOU_SIGNAL, t('toastSent'));
+  renderPanel();
+}
+
+function onAction(a, k) {
+  if (k === 'close') return select(null);
+  if (k === 'log') { logOpen = !logOpen; return renderPanel(); }
+  if (k === 'open') return act(a, { action: 'open' });
+  if (k === 'prefill') { const text = draft.trim(); return act(a, { action: 'prefill', text }, YOU_SIGNAL, text ? t('toastSuggested') : null); }
+  if (k === 'send') return send(a);
+  if (k === 'approve' || k === 'reject') return act(a, { action: 'plan', decision: k, proposal: a.plan }, k === 'approve' ? YOU_SIGNAL : '#ff6b9a', t(k === 'approve' ? 'toastApproved' : 'toastRejected'));
+  if (k === 'stop' || k === 'abort') {
+    if (armed.get(k) !== a.id) {
+      armed.set(k, a.id); renderPanel();
+      setTimeout(() => { if (armed.get(k) === a.id) { armed.delete(k); renderPanel(); } }, 3000);
+      return;
+    }
+    armed.delete(k);
+    act(a, { action: k }, '#ff6b9a', t(k === 'stop' ? 'toastStop' : 'toastAborted'));
+    renderPanel();
+  }
+}
+
+// language: follow the host's appearance; re-word everything on screen when it changes
+function applyAppearance(appearance) {
+  const next = pickLocale(appearance?.locale || navigator.language);
+  const changed = next !== locale;
+  locale = next;
+  document.documentElement.lang = locale;
+  document.title = t('title');
+  if (changed) { renderQueue(); renderEmpty(); if (selected) renderPanel(); }
+}
+applyAppearance(null);
+window.pluginBridge?.on?.('appearance:changed', applyAppearance);
+Promise.resolve(window.pluginBridge?.invoke?.('app.getAppearance')).then(applyAppearance).catch(() => applyAppearance(null));
+
+resize();
+renderQueue();
+renderEmpty();
+requestAnimationFrame(frame);
+pull();
+})();
+</script>
+</body>
+</html>
