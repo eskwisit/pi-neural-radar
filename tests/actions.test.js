@@ -1,0 +1,201 @@
+"use strict";
+
+// The drawer's actions (radar.action → act) and the panel bridge: validation, the exact host
+// operations sent, the confirm flag on plans/resolve, and host failures / denied permissions.
+
+const { describe, it, afterEach } = require("node:test");
+const assert = require("node:assert/strict");
+const { loadMain, fakePi, permissionError } = require("./helpers.js");
+
+const loaded = [];
+function fresh(options) {
+  const pi = fakePi(options);
+  const main = loadMain(pi);
+  loaded.push(main);
+  return { pi, main, t: main.__t };
+}
+// every action schedules a quick re-poll: unload so no timer outlives the test
+afterEach(async () => {
+  while (loaded.length) await loaded.pop().onUnload();
+});
+
+const action = (main, payload) => main.onPanelInvoke("radar.action", payload);
+
+describe("panel bridge", () => {
+  it("answers radar.state with the model and the setting", async () => {
+    const { main } = fresh();
+    const r = await main.onPanelInvoke("radar.state", {});
+    assert.equal(r.ok, true);
+    assert.ok(Array.isArray(r.model.agents));
+    assert.equal(r.autoOpen, "working");
+  });
+
+  it("rejects an unknown channel without calling the host", async () => {
+    const { main, pi } = fresh();
+    const r = await main.onPanelInvoke("radar.exec", { action: "open", sessionId: "s1" });
+    assert.equal(r.ok, false);
+    assert.deepEqual(pi.invocations, []);
+  });
+});
+
+describe("act: input validation", () => {
+  it("rejects a missing sessionId", async () => {
+    const { main, pi } = fresh();
+    for (const payload of [{ action: "open" }, { action: "stop", sessionId: "" }, { action: "abort", sessionId: null }, {}, null, undefined]) {
+      const r = await action(main, payload);
+      assert.equal(r.ok, false, JSON.stringify(payload));
+    }
+    assert.deepEqual(pi.invocations, []);
+    assert.deepEqual(pi.suggestions, []);
+  });
+
+  it("rejects an unknown action", async () => {
+    const { main, pi } = fresh();
+    const r = await action(main, { action: "delete", sessionId: "s1" });
+    assert.equal(r.ok, false);
+    assert.deepEqual(pi.invocations, []);
+  });
+
+  it("does not send an empty or blank message", async () => {
+    const { main, pi } = fresh();
+    for (const text of ["", "   \n ", undefined, null]) {
+      const r = await action(main, { action: "send", sessionId: "s1", text });
+      assert.equal(r.ok, false);
+    }
+    assert.deepEqual(pi.invocations, []);
+  });
+
+  it("refuses a plan decision without a complete pending proposal", async () => {
+    const { main, pi } = fresh();
+    for (const proposal of [undefined, {}, { proposalId: "p1" }, { proposalId: "p1", turnId: "t1" }]) {
+      const r = await action(main, { action: "plan", sessionId: "s1", decision: "approve", proposal });
+      assert.equal(r.ok, false);
+    }
+    assert.deepEqual(pi.invocations, []);
+  });
+});
+
+describe("act: host operations", () => {
+  it("open → session/open", async () => {
+    const { main, pi } = fresh();
+    assert.equal((await action(main, { action: "open", sessionId: "s1" })).ok, true);
+    assert.deepEqual(pi.invocations, [{ operation: "session/open", args: ["s1"] }]);
+  });
+
+  it("send → agent/prompt with the trimmed text, no confirm flag", async () => {
+    const { main, pi } = fresh();
+    assert.equal((await action(main, { action: "send", sessionId: "s1", text: "  go on  " })).ok, true);
+    assert.deepEqual(pi.invocations, [{ operation: "agent/prompt", args: [{ sessionId: "s1", content: "go on" }] }]);
+  });
+
+  it("stop → agent/stop and abort → agent/abort (the view asks for the second click)", async () => {
+    const { main, pi } = fresh();
+    await action(main, { action: "stop", sessionId: "s1" });
+    await action(main, { action: "abort", sessionId: "s1" });
+    assert.deepEqual(pi.invocations, [
+      { operation: "agent/stop", args: [{ sessionId: "s1" }] },
+      { operation: "agent/abort", args: [{ sessionId: "s1" }] },
+    ]);
+  });
+
+  it("prefill → session/open, then composer.suggest with the trimmed text", async () => {
+    const { main, pi } = fresh();
+    assert.equal((await action(main, { action: "prefill", sessionId: "s1", text: " try the cache " })).ok, true);
+    assert.deepEqual(pi.ops(), ["session/open"]);
+    assert.deepEqual(pi.suggestions, [{ sessionId: "s1", text: "try the cache" }]);
+  });
+
+  it("prefill without text only opens the session", async () => {
+    const { main, pi } = fresh();
+    await action(main, { action: "prefill", sessionId: "s1", text: "  " });
+    assert.deepEqual(pi.ops(), ["session/open"]);
+    assert.deepEqual(pi.suggestions, []);
+  });
+
+  const proposal = { proposalId: "p1", turnId: "t1", toolCallId: "c1", version: 3 };
+
+  it("approve → plans/resolve sent with confirm: true, in the safe \"ask\" mode by default", async () => {
+    const { main, pi } = fresh();
+    assert.equal((await action(main, { action: "plan", sessionId: "s1", decision: "approve", proposal })).ok, true);
+    assert.equal(pi.invocations.length, 1);
+    const [req] = pi.invocations;
+    assert.equal(req.operation, "plans/resolve");
+    assert.equal(req.confirm, true);
+    assert.deepEqual(req.args, [{ proposalId: "p1", sessionId: "s1", turnId: "t1", toolCallId: "c1", action: "approve", version: 3, targetPermissionMode: "ask" }]);
+  });
+
+  it("reject → plans/resolve with confirm: true and no permission mode", async () => {
+    const { main, pi } = fresh();
+    await action(main, { action: "plan", sessionId: "s1", decision: "reject", proposal });
+    const [req] = pi.invocations;
+    assert.equal(req.confirm, true);
+    assert.equal(req.args[0].action, "reject");
+    assert.equal("targetPermissionMode" in req.args[0], false);
+  });
+
+  it("anything but decision \"approve\" rejects", async () => {
+    const { main, pi } = fresh();
+    await action(main, { action: "plan", sessionId: "s1", decision: "yes", proposal });
+    assert.equal(pi.invocations[0].args[0].action, "reject");
+  });
+
+  for (const [mode, expected] of [["accept-edits", "accept-edits"], ["auto", "auto"], ["bypass-everything", "ask"], ["", "ask"]]) {
+    it(`approve keeps the session's permission mode only when it is known (${mode || "none"} → ${expected})`, async () => {
+      const now = Date.now();
+      const { main, pi, t } = fresh({
+        respond: ({ operation }) => (operation === "session/list" ? { sessions: [{ id: "s1", updatedAt: now, permissionMode: mode }] } : {}),
+      });
+      await t.poll();
+      pi.invocations.length = 0;
+      await action(main, { action: "plan", sessionId: "s1", decision: "approve", proposal });
+      assert.equal(pi.invocations[0].args[0].targetPermissionMode, expected);
+    });
+  }
+});
+
+describe("act: host failures and denied permissions", () => {
+  it("a failing host operation comes back as an error, not a throw", async () => {
+    const { main } = fresh({ respond: () => { throw new Error("session not found"); } });
+    for (const payload of [
+      { action: "open", sessionId: "s1" },
+      { action: "send", sessionId: "s1", text: "hi" },
+      { action: "stop", sessionId: "s1" },
+      { action: "abort", sessionId: "s1" },
+      { action: "prefill", sessionId: "s1", text: "hi" },
+      { action: "plan", sessionId: "s1", decision: "approve", proposal: { proposalId: "p", turnId: "t", toolCallId: "c" } },
+    ]) {
+      const r = await action(main, payload);
+      assert.equal(r.ok, false, payload.action);
+      assert.match(r.message, /session not found/);
+    }
+  });
+
+  it("a denied desktop.control is surfaced with its code", async () => {
+    const { main } = fresh({ respond: () => Promise.reject(permissionError("desktop.control")) });
+    const r = await action(main, { action: "abort", sessionId: "s1" });
+    assert.equal(r.ok, false);
+    assert.equal(r.code, "PERMISSION_DENIED");
+    assert.match(r.message, /desktop\.control/);
+  });
+
+  it("a non-Error rejection is still reported as a message", async () => {
+    const { main } = fresh({ respond: () => Promise.reject("boom") });
+    const r = await action(main, { action: "open", sessionId: "s1" });
+    assert.deepEqual({ ok: r.ok, message: r.message }, { ok: false, message: "boom" });
+  });
+
+  it("a denied composer.suggest is reported to the user", async () => {
+    const { main, pi } = fresh();
+    pi.composer.suggest = () => Promise.reject(permissionError("composer.suggest"));
+    const r = await action(main, { action: "prefill", sessionId: "s1", text: "hello" });
+    assert.equal(r.ok, false);
+  });
+
+  it("a denied composer.suggest does not crash the prefill", async () => {
+    const { main, pi } = fresh();
+    pi.composer.suggest = () => Promise.reject(permissionError("composer.suggest"));
+    const r = await action(main, { action: "prefill", sessionId: "s1", text: "hello" });
+    assert.equal(typeof r, "object");
+    assert.deepEqual(pi.ops(), ["session/open"]);
+  });
+});
