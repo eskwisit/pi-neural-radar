@@ -13,8 +13,8 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
 - **Hover an agent for its tooltip.** The first line is the session name, the second its
-  subagents and its state (Working, Awaiting approval, …). A subagent reads as its role
-  (`explorer`, `fixer`, …) with the task it was given.
+  subagents and its state (Working, Awaiting approval, …); it stays while the agent's drawer is
+  open. A subagent reads as its role (`explorer`, `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
   with a question for you, or a plan waits for approval), working agents further out, finished
   ones at the edge. An agent keeps its own direction from you for
@@ -37,7 +37,12 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 
 Click an agent (its neuron, its tooltip or its chip in the top bar) to toggle its drawer. While the
 drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
-drawer leaves visible, however far they are from you. The drawer offers:
+drawer leaves visible, however far they are from you.
+
+The top of the drawer stays put: the session name, your latest prompt, its state, its model with
+the session's token consumption, and the actions below. **Subagents** and **Activity** fold
+open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
+drawer from a subagent unfolds Subagents on it. The drawer offers:
 
 - **Reply**: when an agent ended its turn asking you something, the drawer shows what it asked and
   your reply goes straight to it
@@ -65,8 +70,9 @@ access and stores nothing besides its settings.
 
 It **can**:
 
-- read your recent sessions: their titles, agent status, the last 60 messages of each transcript,
-  subagents and pending Plan / Goal approvals. This is shown only in the radar view, on your machine
+- read your recent sessions: their titles, token counts, agent status, the last 60 messages of each
+  transcript, subagents and pending Plan / Goal approvals. This is shown only in the radar view, on
+  your machine
 - when you click: open a session, send the text you typed to the agent, put your text in a
   session's composer (you still send it), approve or reject the plan shown in the drawer, or stop
   or abort an agent. Stop and Abort need a second click within 3 seconds
