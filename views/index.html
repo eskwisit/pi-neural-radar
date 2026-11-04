@@ -883,8 +883,8 @@ function draw(time) {
   const agentLabels = [];
   for (const a of agents) {
     if (a === solo || hover?.a !== a || hover.s) { a.label = null; continue; }
-    // line 1: the prompt; line 2: its subagents and its state
-    const desc = clip(taskOf(a), 48);
+    // line 1: the session name; line 2: its subagents and its state
+    const desc = nameOf(a, 48);
     const ns = a.subs.length;
     const stat = `${ns ? plural(ns, 'subagentsOne', 'subagentsMany') + ' · ' : ''}${a.reply ? t('needsReply') : statusLabel(a.status)}`;
     ctx.font = '600 11.5px ui-sans-serif, system-ui'; const wd = ctx.measureText(desc).width;
