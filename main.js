@@ -50,6 +50,9 @@ async function op(operation, args = [], confirm = false) {
 const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
 const arr = (v) => (Array.isArray(v) ? v : []);
 const ts = (v) => (typeof v === "number" ? v : v ? Date.parse(v) || 0 : 0);
+const num = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+/** The session's token consumption, as PI-Desktop counts it: its total, else input + output. */
+const tokensOf = (s) => num(s.totalTokens ?? s.total_tokens) || num(s.inputTokens ?? s.input_tokens) + num(s.outputTokens ?? s.output_tokens);
 
 // ---------- reading sessions ----------
 function sessionsFrom(listResult) {
@@ -62,6 +65,7 @@ function sessionsFrom(listResult) {
       model: str(s.modelId ?? s.model_id ?? s.model),
       mode: str(s.mode),
       permissionMode: str(s.permissionMode ?? s.permission_mode),
+      tokens: tokensOf(s),
     }))
     .filter((s) => s.id);
 }
@@ -441,6 +445,7 @@ async function poll() {
       task: lastUserText(messages).slice(0, 220) || title,
       status: statusKey,
       model: str(status.modelId) || s.model,
+      tokens: s.tokens,
       active: s.id === activeSessionId,
       question,
       reply,
