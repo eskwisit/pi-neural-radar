@@ -994,20 +994,15 @@ function hitTest(x, y) {
 }
 canvas.addEventListener('mousemove', e => {
   hover = hitTest(e.clientX, e.clientY);
-  canvas.style.cursor = hover ? 'pointer' : 'default';
+  // You (the centre) is not clickable
+  canvas.style.cursor = hover && !hover.you ? 'pointer' : 'default';
 });
 canvas.addEventListener('mouseleave', () => { hover = null; });
 canvas.addEventListener('click', e => {
   const h = hitTest(e.clientX, e.clientY);
+  if (h?.you) return; // You (the centre) is not clickable
   if (!h) { select(null); return; }
   if (h.a && !h.s && selected === h.a.id) { select(null); return; } // clicking the open agent again closes the drawer
-  if (!h.a) {
-    // clicking You toggles the drawer: close it when open, otherwise open the agent that needs you most
-    if (selected) { select(null); return; }
-    const top = [...agents].sort((p, q) => q.attention - p.attention)[0];
-    if (top) select(top.id);
-    return;
-  }
   select(h.a.id, h.s?.id || null);
 });
 addEventListener('keydown', e => { if (e.key === 'Escape') select(null); });
