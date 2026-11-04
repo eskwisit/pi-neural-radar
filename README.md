@@ -34,7 +34,9 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 
 ## Stepping in
 
-Click an agent (its neuron, its label or its chip in the top bar) to toggle its drawer:
+Click an agent (its neuron, its label or its chip in the top bar) to toggle its drawer. While the
+drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
+drawer leaves visible, however far they are from you. The drawer offers:
 
 - **Reply**: when an agent ended its turn asking you something, the drawer shows what it asked and
   your reply goes straight to it
