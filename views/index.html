@@ -447,7 +447,7 @@ function mkAgent(id) {
 }
 
 let selected = null, selectedSub = null, hover = null;
-let solo = null; // the only agent on the radar: it is you, drawn as the centre node
+let solo = null; // the only agent on the radar, with no subagents: it is you, drawn as the centre node
 let draft = '', connected = null, panelSig = '', lastError = null;
 let logOpen = false; // the Activity section starts folded for each agent you open
 const simPaused = false, speed = 1;
@@ -475,7 +475,8 @@ function sync(model) {
     if (selected === agents[i].id) select(null);
     agents.splice(i, 1);
   }
-  solo = agents.length === 1 ? agents[0] : null;
+  // an agent with subagents keeps its own node: you -> agent -> subagents, never subagents on you
+  solo = agents.length === 1 && agents[0].subs.length === 0 ? agents[0] : null;
   lastError = model.error || null;
   renderQueue(); renderEmpty();
   // the drawer is rebuilt only when its agent's data changed, so clicks are never lost
