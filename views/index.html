@@ -45,6 +45,7 @@
   .panel.open { transform: none; box-shadow: -24px 0 60px rgba(0,0,0,.55); }
   .panel h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .panel .close { position: absolute; top: 12px; right: 12px; }
+  .meta .tok { opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
   .status { display: inline-block; font-size: 11px; margin-top: 6px; letter-spacing: .04em; }
   .meter { margin: 14px 0 4px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
   .meter > i { display: block; height: 100%; background: linear-gradient(90deg, #34d399, #2aa7a0, #4f6bed, #a855f7); transition: width .5s; }
@@ -165,6 +166,8 @@ const COPY = {
     lastTool: 'last {tool}',
     noSubagents: 'No subagents in this turn',
     activityHeading: 'Activity ({n})',
+    tokensOne: '{n} token',
+    tokensMany: '{n} tokens',
     nothingYet: 'Nothing yet',
     close: 'Close',
     log_you: 'You: {text}',
@@ -237,6 +240,8 @@ const COPY = {
     lastTool: '最近：{tool}',
     noSubagents: '本回合没有子智能体',
     activityHeading: '活动（{n}）',
+    tokensOne: '{n} 个 token',
+    tokensMany: '{n} 个 token',
     nothingYet: '暂无记录',
     close: '关闭',
     log_you: '你：{text}',
@@ -265,6 +270,8 @@ function t(key, vars) {
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }
 const plural = (n, one, many) => t(n === 1 ? one : many, { n });
+// a session's token consumption, compact in the user's language (12.3k, 1.2万, …)
+const tokensText = n => n > 0 ? t(n === 1 ? 'tokensOne' : 'tokensMany', { n: new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n) }) : '';
 const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s || ''));
 // an agent is named after its session, as in PI-Desktop's session list
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
@@ -467,7 +474,7 @@ function sync(model) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id); agents.push(a); }
-    Object.assign(a, { role: m.role, desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
+    Object.assign(a, { role: m.role, desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, tokens: m.tokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
     a.target = attentionFor(m.status);
     const subSeen = new Set();
     for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
@@ -1065,6 +1072,7 @@ function renderPanel() {
   if (!a) { panel.classList.remove('open'); selected = null; computeView(); return; }
   const focused = document.activeElement?.id === 'draft';
   const logScroll = panel.querySelector('.log')?.scrollTop ?? 0;
+  const tok = tokensText(a.tokens);
   const col = ST[a.status];
   const live = a.status !== 'done';
   const q = a.question, p = a.plan;
@@ -1075,7 +1083,7 @@ function renderPanel() {
     <h2><span class="dot" style="color:${col}"></span>${esc(nameOf(a, 40))}${a === solo ? `<span style="color:var(--muted);font-weight:400">${esc(t('youTag'))}</span>` : ''}</h2>
     <div style="color:var(--muted);margin-top:4px">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
-    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}${tok ? `<span class="tok">${a.model ? ' · ' : ''}${esc(tok)}</span>` : ''}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
 
     ${q ? `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
       <div class="ask">${q.ctx ? `<div class="ctx">${esc(q.ctx)}</div>` : ''}<p>${esc(q.q)}</p>
