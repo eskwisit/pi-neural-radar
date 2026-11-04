@@ -81,6 +81,19 @@ describe("poll: model", () => {
     assert.equal(agent.reply, evil);
   });
 
+  it("carries the session's token consumption: its total, else input + output", async () => {
+    const now = Date.now();
+    const sessions = [
+      { id: "s1", updatedAt: now, totalTokens: 12345, inputTokens: 1, outputTokens: 2 },
+      { id: "s2", updatedAt: now - 1, inputTokens: 300, outputTokens: 45 },
+      { id: "s3", updatedAt: now - 2 },
+    ];
+    const { t } = fresh({ respond: host({ sessions, messages: () => [user("go"), assistant("done?")] }) });
+    await t.poll();
+    const tokens = Object.fromEntries(t.model.agents.map((a) => [a.id, a.tokens]));
+    assert.deepEqual(tokens, { s1: 12345, s2: 345, s3: 0 });
+  });
+
   it("does not open the view on the first poll, then opens it when an agent starts working", async () => {
     const now = Date.now();
     let run = false;
