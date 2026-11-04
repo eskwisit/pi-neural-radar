@@ -6,9 +6,11 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
 
 - **You** sit at the centre. Each agent (a session) is a cluster of neurons; its subagents are the
   small clusters behind it.
-- **One agent is you.** When a single agent is on the radar, it merges into the centre node: the
-  You label shows its status and task, its subagents sit around you, and clicking You opens its
-  drawer. A second agent splits off into its own cluster.
+- **One agent is you.** When a single agent with no subagents is on the radar, it merges into the
+  centre node: the You label shows its status and task, and clicking You opens its drawer. An
+  agent with subagents keeps its own cluster (you → agent → subagents), and so does a second agent.
+- **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
+  further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
 - **Agents are named after their session.** An agent reads as its session title and status, with
   what it works on (the first line of your latest request) below. A subagent reads as its role
   (`explorer`, `fixer`, …) with the task it was given.
