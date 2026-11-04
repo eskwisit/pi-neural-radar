@@ -39,12 +39,26 @@
   .btn.ghost { background: transparent; border-color: transparent; }
 
 
+  /* the drawer: everything above Subagents stays put; Subagents and Activity fold, and an open
+     one scrolls inside itself, so the drawer never scrolls. Only when the fixed part cannot fit
+     the panel does it scroll on its own, so nothing is ever out of reach. */
   .panel { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; background: rgba(10, 10, 14, 0.96);
-    border-left: 1px solid var(--line); backdrop-filter: blur(16px); padding: 22px 20px;
-    overflow-y: auto; transform: translateX(100%); transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s; z-index: 6; }
+    border-left: 1px solid var(--line); backdrop-filter: blur(16px); display: flex; flex-direction: column;
+    overflow: hidden; transform: translateX(100%); transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s; z-index: 6; }
   .panel.open { transform: none; box-shadow: -24px 0 60px rgba(0,0,0,.55); }
+  .panel .top { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 20px 18px; border-bottom: 1px solid var(--line); }
+  .panel .head { padding-right: 24px; }
+  .panel .head .task { color: var(--muted); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .panel .body { flex: 1 0 auto; display: flex; flex-direction: column; overflow: hidden; padding: 0 20px 18px; }
+  .panel .body.hasopen { flex-basis: 220px; }
+  .panel .body > .section { flex: none; display: flex; flex-direction: column; min-height: 0; }
+  .panel .body > .section > h4 { flex: none; }
+  .panel .body > .section.subs.open { flex: 0 1 auto; min-height: 72px; }
+  .panel .body > .section.activity.open { flex: 1 1 0; min-height: 120px; }
+  .panel .body .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .panel .body .log { max-height: none; }
   .panel h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  .panel .close { position: absolute; top: 12px; right: 12px; }
+  .panel .close { position: absolute; top: 12px; right: 12px; z-index: 1; }
   .meta .tok { opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
   .status { display: inline-block; font-size: 11px; margin-top: 6px; letter-spacing: .04em; }
   .meter { margin: 14px 0 4px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
@@ -465,6 +479,8 @@ let selected = null, selectedSub = null, hover = null;
 let solo = null; // the only agent on the radar, with no subagents: it is you, drawn as the centre node
 let draft = '', connected = null, panelSig = '', lastError = null;
 let logOpen = false; // the Activity section starts folded for each agent you open
+let subsOpen = false; // so does Subagents, unless you open the drawer from one of its subagents
+let revealSub = false; // scroll the picked subagent into view on the next render
 const simPaused = false, speed = 1;
 function attentionFor(s) { return { need: 0.93, approve: 0.75, run: 0.2, paused: 0.35, stopped: 0.03, done: 0.04 }[s] ?? 0.2; }
 
@@ -1020,7 +1036,8 @@ new ResizeObserver(() => { if (innerWidth !== W || innerHeight !== H) resize(); 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resize(); });
 
 function select(id, subId = null) {
-  if (selected !== id) { draft = ''; logOpen = false; }
+  if (selected !== id) { draft = ''; logOpen = false; subsOpen = false; }
+  if (subId) { subsOpen = true; revealSub = true; }
   selected = id; selectedSub = subId; panelSig = '';
   computeView();
   renderPanel();
@@ -1071,7 +1088,9 @@ function renderPanel() {
   const a = agents.find(x => x.id === selected);
   if (!a) { panel.classList.remove('open'); selected = null; computeView(); return; }
   const focused = document.activeElement?.id === 'draft';
-  const logScroll = panel.querySelector('.log')?.scrollTop ?? 0;
+  const keep = sel => panel.querySelector(sel)?.scrollTop ?? 0;
+  const logScroll = keep('.log'), subsScroll = keep('.subs .scroll'), topScroll = keep('.top');
+  const hasOpen = subsOpen || logOpen;
   const tok = tokensText(a.tokens);
   const col = ST[a.status];
   const live = a.status !== 'done';
@@ -1080,10 +1099,14 @@ function renderPanel() {
   const armedStop = armed.get('stop') === a.id, armedAbort = armed.get('abort') === a.id;
   panel.innerHTML = `
     <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
+    <div class="top">
+    <div class="head">
     <h2><span class="dot" style="color:${col}"></span>${esc(nameOf(a, 40))}${a === solo ? `<span style="color:var(--muted);font-weight:400">${esc(t('youTag'))}</span>` : ''}</h2>
-    <div style="color:var(--muted);margin-top:4px">${esc(taskOf(a))}</div>
+    <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
     <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}${tok ? `<span class="tok">${a.model ? ' · ' : ''}${esc(tok)}</span>` : ''}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    </div>
+
 
     ${q ? `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
       <div class="ask">${q.ctx ? `<div class="ctx">${esc(q.ctx)}</div>` : ''}<p>${esc(q.q)}</p>
@@ -1116,19 +1139,23 @@ function renderPanel() {
       </div>
       <div class="note">${esc(t('stopNote'))}</div></div>
 
-    <div class="section"><h4>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
-      ${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
-          <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
-          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}</small></div>
-        </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}
     </div>
 
-    <div class="section"><h4 class="fold ${logOpen ? 'open' : ''}" data-act="log" role="button" tabindex="0" aria-expanded="${logOpen}"><span class="caret">▸</span>${esc(t('activityHeading', { n: (a.log || []).length }))}</h4>
-      ${logOpen ? `<div class="log">${(a.log || []).map(l => `<div class="${l.kind === 'you' ? 'you' : ''}"><time>${clock(l.t)}</time>${esc(logLine(l))}</div>`).join('') || `<div class="empty">${esc(t('nothingYet'))}</div>`}</div>` : ''}
+    <div class="body ${hasOpen ? 'hasopen' : ''}">
+    <div class="section subs ${subsOpen ? 'open' : ''}"><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
+      ${subsOpen ? `<div class="scroll">${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
+          <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
+          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}</small></div>
+        </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}</div>` : ''}
+    </div>
+    <div class="section activity ${logOpen ? 'open' : ''}"><h4 class="fold ${logOpen ? 'open' : ''}" data-act="log" role="button" tabindex="0" aria-expanded="${logOpen}"><span class="caret">▸</span>${esc(t('activityHeading', { n: (a.log || []).length }))}</h4>
+      ${logOpen ? `<div class="log scroll">${(a.log || []).map(l => `<div class="${l.kind === 'you' ? 'you' : ''}"><time>${clock(l.t)}</time>${esc(logLine(l))}</div>`).join('') || `<div class="empty">${esc(t('nothingYet'))}</div>`}</div>` : ''}
+    </div>
     </div>`;
   panel.classList.add('open');
-  const logEl = panel.querySelector('.log');
-  if (logEl) logEl.scrollTop = logScroll;
+  const restore = (sel, top) => { const el = panel.querySelector(sel); if (el) el.scrollTop = top; };
+  restore('.log', logScroll); restore('.subs .scroll', subsScroll); restore('.top', topScroll);
+  if (revealSub) { revealSub = false; panel.querySelector('.sub.hl')?.scrollIntoView({ block: 'nearest' }); }
 
   const ta = panel.querySelector('#draft');
   if (ta) {
@@ -1137,7 +1164,7 @@ function renderPanel() {
     if (focused) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
   }
   panel.querySelectorAll('[data-act]').forEach(b => b.onclick = () => onAction(a, b.dataset.act));
-  panel.querySelector('.fold')?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction(a, 'log'); } });
+  panel.querySelectorAll('.fold').forEach(f => f.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction(a, f.dataset.act); } }));
 }
 
 function send(a) {
@@ -1151,6 +1178,7 @@ function send(a) {
 function onAction(a, k) {
   if (k === 'close') return select(null);
   if (k === 'log') { logOpen = !logOpen; return renderPanel(); }
+  if (k === 'subs') { subsOpen = !subsOpen; return renderPanel(); }
   if (k === 'open') return act(a, { action: 'open' });
   if (k === 'prefill') { const text = draft.trim(); return act(a, { action: 'prefill', text }, YOU_SIGNAL, text ? t('toastSuggested') : null); }
   if (k === 'send') return send(a);
