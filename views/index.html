@@ -878,11 +878,12 @@ function draw(time) {
   };
   // stacking order, bottom to top: subagents < agents < You (main). Later draws cover earlier ones.
   // agent tooltip layout first, so the You label can dodge it and subagents can be drawn underneath.
-  // An agent's tooltip shows only while the pointer is on it.
+  // An agent's tooltip shows while the pointer is on it, and stays while its drawer is open.
   const availW = selected && W > 900 ? W - 400 : W;
   const agentLabels = [];
   for (const a of agents) {
-    if (a === solo || hover?.a !== a || hover.s) { a.label = null; continue; }
+    const hovered = hover?.a === a && !hover.s;
+    if (a === solo || !(hovered || selected === a.id)) { a.label = null; continue; }
     // line 1: the session name; line 2: its subagents and its state
     const desc = nameOf(a, 48);
     const ns = a.subs.length;
