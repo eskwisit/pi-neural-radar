@@ -12,7 +12,7 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   agent with subagents keeps its own cluster (you → agent → subagents), and so does a second agent.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
-- **Hover an agent for its tooltip.** The first line is your latest prompt, the second its
+- **Hover an agent for its tooltip.** The first line is the session name, the second its
   subagents and its state (Working, Awaiting approval, …). A subagent reads as its role
   (`explorer`, `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
