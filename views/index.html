@@ -320,13 +320,21 @@ function grad(u) {
 const params = new URLSearchParams(location.search);
 const LAYOUT = 1;
 const EMBED = false;
-const box = { x: 0, y: 0, w: 0, h: 0 }, boxT = { x: 0, y: 0, w: 0, h: 0 };
+const box = { x: 0, y: 0, w: 0, h: 0 }, boxT = { x: 0, y: 0, w: 0, h: 0 }, boxBase = { x: 0, y: 0, w: 0, h: 0 };
 // the area you and the agents live in: leaves room for the top bar, labels and side panel
 function computeView() {
   const mobile = W < 760, availW = selected && W > 900 ? W - 400 : W;
   const top = mobile ? 70 : 64, bottom = (mobile ? 64 : 70) + (LAYOUT === 4 || LAYOUT === 5 ? 50 : 0);
   const side = mobile ? 44 : Math.max(130, availW * 0.09);
-  boxT.x = side; boxT.y = top; boxT.w = Math.max(160, availW - side * 2); boxT.h = Math.max(160, H - top - bottom);
+  boxBase.x = side; boxBase.y = top; boxBase.w = Math.max(160, availW - side * 2); boxBase.h = Math.max(160, H - top - bottom);
+  Object.assign(boxT, boxBase);
+}
+// the centre of the part of the screen the drawer leaves visible
+function viewCentre() {
+  const mobile = W < 760, top = mobile ? 70 : 64;
+  if (selected && mobile) return [W / 2, (top + H * 0.3) / 2];   // the drawer covers the lower 70%
+  const w = selected ? W - 400 : W;
+  return [w / 2, (top + H) / 2];
 }
 // status tiers, each at its own distance from you so they never blur together
 function tierOf(a) { return { need: 0, approve: 1, run: 2, paused: 2, done: 3, stopped: 3 }[a.status] ?? 2; }
@@ -637,6 +645,18 @@ function update(dt, t) {
   for (let it = 0; it < 3; it++) for (let i = 0; i < agents.length; i++) for (let j = i + 1; j < agents.length; j++) {
     const A = targets[i], B = targets[j], dx = B[0] - A[0], dy = B[1] - A[1], d = Math.hypot(dx, dy) || 1;
     if (d < minSep) { const p = (minSep - d) / 2, ux = dx / d, uy = dy / d; A[0] -= ux * p; A[1] -= uy * p; B[0] += ux * p; B[1] += uy * p; }
+  }
+  // the open agent's cluster is brought to the centre of the visible area: the whole layout
+  // slides so it never ends up off screen or under the drawer
+  boxT.w = boxBase.w; boxT.h = boxBase.h; boxT.x = boxBase.x; boxT.y = boxBase.y;
+  const si = selected ? agents.findIndex(a => a.id === selected) : -1, sel = agents[si];
+  if (sel && sel !== solo && !isNaN(sel.x)) {
+    // cluster extent: the agent and its subagents, measured around where the agent is heading
+    let x0 = sel.x, x1 = sel.x, y0 = sel.y, y1 = sel.y;
+    for (const s of sel.subs) if (s.x) { x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y); }
+    const [vx, vy] = viewCentre(), [tx, ty] = targets[si];
+    const cx = tx + (x0 + x1) / 2 - sel.x, cy = ty + (y0 + y1) / 2 - sel.y;
+    boxT.x = box.x + vx - cx; boxT.y = box.y + vy - cy;
   }
   const R = Math.min(box.w, box.h) / 2;
   const subT = [];
