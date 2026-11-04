@@ -5,9 +5,10 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
 ![Neural Radar: You at the centre; an agent waiting for your reply and a plan awaiting approval on the inner ring; a working agent and a working goal with their explorer, fixer, test-runner, code-reviewer and ui-designer subagents; a finished agent at the edge; the drawer of the waiting agent open on the right](docs/neural-radar.png)
 
 - **You** sit at the centre. Each agent (a session) is a cluster of neurons; its subagents are the
-  small clusters behind it.
+  small clusters behind it. The You label counts the agents waiting on you, or reads **Idle**, and
+  the centre is not clickable.
 - **One agent is you.** When a single agent with no subagents is on the radar, it merges into the
-  centre node: the You label shows its status and task (or **Idle**). You are not clickable. An
+  centre node: the You label shows its status and task instead. An
   agent with subagents keeps its own cluster (you → agent → subagents), and so does a second agent.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
