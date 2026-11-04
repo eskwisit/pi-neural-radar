@@ -7,12 +7,12 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
 - **You** sit at the centre. Each agent (a session) is a cluster of neurons; its subagents are the
   small clusters behind it.
 - **One agent is you.** When a single agent with no subagents is on the radar, it merges into the
-  centre node: the You label shows its status and task, and clicking You opens its drawer. An
+  centre node: the You label shows its status and task (or **Idle**). You are not clickable. An
   agent with subagents keeps its own cluster (you → agent → subagents), and so does a second agent.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
-- **Agents are named after their session.** An agent reads as its session title and status, with
-  what it works on (the first line of your latest request) below. A subagent reads as its role
+- **Hover an agent for its tooltip.** The first line is your latest prompt, the second its
+  subagents and its state (Working, Awaiting approval, …). A subagent reads as its role
   (`explorer`, `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
   with a question for you, or a plan waits for approval), working agents further out, finished
@@ -34,7 +34,7 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 
 ## Stepping in
 
-Click an agent (its neuron, its label or its chip in the top bar) to toggle its drawer. While the
+Click an agent (its neuron, its tooltip or its chip in the top bar) to toggle its drawer. While the
 drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
 drawer leaves visible, however far they are from you. The drawer offers:
 
