@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.23.0
+
+### Features
+
+- **view:** always show every agent's tooltip (`225008d`)
+- **view:** remove the session's total tokens from the drawer (`b781001`)
+
+### Refactoring
+
+- **main:** drop model fields the view never reads (`3abf1ff`)
+- **view:** drop unused layouts, background canvas and dead code (`e72ae43`)
+- **main:** stop reading the token usage history (`4af5527`)
+
+### Documentation
+
+- **readme:** describe tooltips shown for every agent (`25ddfcc`)
+- **readme:** drop the total used tokens and usage history read (`a8016ec`)
+- drop the token usage history from the security review (`72b6e73`)
+- **manifest:** drop the token usage history from the safety notes (`91d175e`)
+
+### Tests
+
+- **tests:** read the autoOpen setting from the main process (`58e1490`)
+- **tests:** drop the session token total tests (`ceaff0e`)
+- **tests:** no longer allow the token usage history read (`f8bb5bc`)
+
 ## 0.21.0
 
 ### Features

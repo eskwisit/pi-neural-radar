@@ -46,8 +46,8 @@ drawer leaves visible, however far they are from you.
 
 The top of the drawer stays put: the session name (on one line, cut short with "…" when it is long),
 your latest prompt, its state, its model and the actions below. Each subagent
-in **Subagents** shows the tokens its transcript reports so far, marked `≥`: the host does not
-record every model call of a subagent in the transcript, so only the agent's total is exact.
+in **Subagents** shows the tokens its transcript reports so far, marked `≥`: a lower bound, since
+the host does not record every model call of a subagent in the transcript.
 **Activity** names each tool with its target (a file, a command, a pattern or a host). **Subagents** and **Activity** fold
 open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
 drawer from a subagent unfolds Subagents on it. The drawer offers:
