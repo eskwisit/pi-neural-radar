@@ -181,6 +181,27 @@ function describeTask(messages, title) {
 }
 const clipText = (text, n) => (text.length > n ? text.slice(0, n - 1) + "…" : text);
 
+/** A short target for a tool call: a file name, the gist of a command, a pattern or a host. */
+function toolTarget(args) {
+  let a = args;
+  if (typeof a === "string") { try { a = JSON.parse(a); } catch { a = {}; } }
+  if (!a || typeof a !== "object") return "";
+  const file = str(a.path ?? a.file_path ?? a.filePath ?? a.notebook_path);
+  if (file) return clipText(file.split(/[\\/]/).filter(Boolean).pop() || file, 28);
+  const cmd = str(a.command ?? a.cmd);
+  if (cmd) {
+    // skip set-up steps like "cd dir &&" or "export X=1;" and keep the command that does the work
+    const parts = cmd.split(/&&|\|\||;|\n/).map((x) => x.trim()).filter(Boolean);
+    const main = parts.find((x) => !/^(cd|export|set|source|\.)\s/.test(x)) || parts[0] || "";
+    return clipText(main.split(/\s+/).slice(0, 2).join(" "), 28);
+  }
+  const pat = str(a.pattern ?? a.query);
+  if (pat) return clipText(pat, 28);
+  const url = str(a.url);
+  if (url) { try { return new URL(url).hostname; } catch { return clipText(url, 28); } }
+  return "";
+}
+
 function messagesFrom(getResult) {
   return arr(getResult?.messages ?? getResult?.session?.messages ?? getResult?.transcript);
 }
@@ -415,7 +436,7 @@ function lastUserText(messages) {
  *   { t, kind: "say", text }            the agent's message
  *   { t, kind: "launch", agent, text }  a subagent launch (agent "" = unnamed), text = its task
  *   { t, kind: "ask" }                  the agent asked you a question
- *   { t, kind: "tool", tool, running }  a tool call
+ *   { t, kind: "tool", tool, target, running }  a tool call; target is a file, command, pattern or host ("" if none)
  */
 function activityLog(messages) {
   const out = [];
@@ -426,7 +447,7 @@ function activityLog(messages) {
     for (const b of blocksOf(m)) {
       if (b?.name === "Task") out.push({ t: at, kind: "launch", agent: str(b.args?.agent), text: str(b.args?.description).slice(0, 90) });
       else if (b?.name === "asktool") out.push({ t: at, kind: "ask" });
-      else if (b?.name && b?.type !== "text") out.push({ t: at, kind: "tool", tool: str(b.name), running: !b.completedAt });
+      else if (b?.name && b?.type !== "text") out.push({ t: at, kind: "tool", tool: str(b.name), target: toolTarget(b.args ?? b.input), running: !b.completedAt });
     }
   }
   return out.slice(-12).reverse();
