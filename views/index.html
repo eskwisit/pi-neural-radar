@@ -879,12 +879,12 @@ function draw(time) {
   };
   // stacking order, bottom to top: subagents < agents < You (main). Later draws cover earlier ones.
   // agent tooltip layout first, so the You label can dodge it and subagents can be drawn underneath.
-  // An agent's tooltip shows while the pointer is on it, and stays while its drawer is open.
+  // Every agent always shows its tooltip; the hovered one, then the open one, are drawn on top.
   const availW = selected && W > 900 ? W - 400 : W;
+  const raised = a => (selected === a.id ? 2 : hover?.a === a && !hover.s ? 1 : 0);
   const agentLabels = [];
   for (const a of agents) {
-    const hovered = hover?.a === a && !hover.s;
-    if (a === solo || !(hovered || selected === a.id)) { a.label = null; continue; }
+    if (a === solo) { a.label = null; continue; }
     // line 1: what it works on now; line 2: its state, then one concrete fact, then how long ago
     const desc = clip(descOf(a), 36);
     const [stat, detail] = tipLine(a);
@@ -896,6 +896,8 @@ function draw(time) {
     a.label = { x: px, y: py, w: pw, h: ph };
     agentLabels.push({ a, stat, detail, desc, px, py, pw, ph });
   }
+  agentLabels.sort((p, q) => raised(p.a) - raised(q.a));
+  agentLabels.forEach((l, i) => { l.a.label.z = i; }); // draw order, so a click hits the tooltip on top
 
   // 1) subagents (bottom): role and what they were asked to do; finished ones first, so the
   //    working ones always paint over them
@@ -985,10 +987,10 @@ function hitTest(x, y) {
   const onYou = Math.hypot(x - you.x, y - you.y) < 62 * K || inRect(you.label);
   // a single agent is you: the centre stands for it
   if (onYou) return solo ? { a: solo, you: true } : { you: true };
-  for (const a of order) {
-    if (a === solo) continue;
-    if (Math.hypot(x - a.x, y - a.y) < 42 * K || inRect(a.label)) return { a };
-  }
+  // tooltips can overlap: the one drawn last (on top) wins
+  const onLabel = agents.filter(a => inRect(a.label)).sort((p, q) => q.label.z - p.label.z)[0];
+  if (onLabel) return { a: onLabel };
+  for (const a of order) if (a !== solo && Math.hypot(x - a.x, y - a.y) < 42 * K) return { a };
   for (const a of order) for (const s of a.subs) if (Math.hypot(x - s.x, y - s.y) < 20 * K || inRect(s.label)) return { a, s };
   return null;
 }
