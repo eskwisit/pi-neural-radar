@@ -97,17 +97,10 @@ describe("act: host operations", () => {
     ]);
   });
 
-  it("prefill → session/open, then composer.suggest with the trimmed text", async () => {
+  it("prefill is no longer an action and touches neither the session nor the composer", async () => {
     const { main, pi } = fresh();
-    assert.equal((await action(main, { action: "prefill", sessionId: "s1", text: " try the cache " })).ok, true);
-    assert.deepEqual(pi.ops(), ["session/open"]);
-    assert.deepEqual(pi.suggestions, [{ sessionId: "s1", text: "try the cache" }]);
-  });
-
-  it("prefill without text only opens the session", async () => {
-    const { main, pi } = fresh();
-    await action(main, { action: "prefill", sessionId: "s1", text: "  " });
-    assert.deepEqual(pi.ops(), ["session/open"]);
+    assert.equal((await action(main, { action: "prefill", sessionId: "s1", text: "try the cache" })).ok, false);
+    assert.deepEqual(pi.invocations, []);
     assert.deepEqual(pi.suggestions, []);
   });
 
@@ -160,7 +153,6 @@ describe("act: host failures and denied permissions", () => {
       { action: "send", sessionId: "s1", text: "hi" },
       { action: "stop", sessionId: "s1" },
       { action: "abort", sessionId: "s1" },
-      { action: "prefill", sessionId: "s1", text: "hi" },
       { action: "plan", sessionId: "s1", decision: "approve", proposal: { proposalId: "p", turnId: "t", toolCallId: "c" } },
     ]) {
       const r = await action(main, payload);
@@ -181,20 +173,5 @@ describe("act: host failures and denied permissions", () => {
     const { main } = fresh({ respond: () => Promise.reject("boom") });
     const r = await action(main, { action: "open", sessionId: "s1" });
     assert.deepEqual({ ok: r.ok, message: r.message }, { ok: false, message: "boom" });
-  });
-
-  it("a denied composer.suggest is reported to the user", async () => {
-    const { main, pi } = fresh();
-    pi.composer.suggest = () => Promise.reject(permissionError("composer.suggest"));
-    const r = await action(main, { action: "prefill", sessionId: "s1", text: "hello" });
-    assert.equal(r.ok, false);
-  });
-
-  it("a denied composer.suggest does not crash the prefill", async () => {
-    const { main, pi } = fresh();
-    pi.composer.suggest = () => Promise.reject(permissionError("composer.suggest"));
-    const r = await action(main, { action: "prefill", sessionId: "s1", text: "hello" });
-    assert.equal(typeof r, "object");
-    assert.deepEqual(pi.ops(), ["session/open"]);
   });
 });
