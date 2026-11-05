@@ -8,8 +8,7 @@
  * `autoOpen` setting, and carries out the actions the user picks in the view's drawer.
  *
  * Data comes from the host's desktop control operations (`desktop.control`):
- *   session/list, agent/getStatus, session/get, plans/pending,
- *   stats/getTokenUsageHistory                                   — read
+ *   session/list, agent/getStatus, session/get, plans/pending    — read
  *   session/open, agent/prompt, agent/stop, agent/abort          — act on the user's click
  *   plans/resolve                                                — "dangerous": sent with confirm
  * The host has no "turn started" event for plugins, so the radar polls. It polls fast while
@@ -31,9 +30,6 @@ const REPLY_KEEP_MS = 2 * 60 * 60 * 1000; // an agent waiting for your reply sta
 const CANDIDATES = 8; // most recently updated sessions considered each poll
 const STALE_MS = 6 * 60 * 60 * 1000; // sessions untouched for this long are not polled
 const REOPEN_COOLDOWN_MS = 30 * 1000;
-// token usage history window: the host accepts at most 365 days per read
-const HISTORY_MS = 365 * 24 * 60 * 60 * 1000 - 60 * 1000;
-const HISTORY_PAGES = 20; // at most 500 turns per page
 
 let autoOpen = "working";
 let timer = null;
@@ -67,49 +63,6 @@ const tokensOf = (u) => !u || typeof u !== "object" ? 0 :
 const usageOf = (m) => m?.usage ?? m?.meta?.usage;
 /** The Task call a subagent's message belongs to ("" for the agent's own messages). */
 const parentCallOf = (m) => str(m?.parentToolCallId ?? m?.meta?.parentToolCallId);
-
-// ---------- token consumption ----------
-/** The turn rows of a stats/getTokenUsageHistory page. */
-function usageRowsFrom(result) {
-  const rows = result?.turns ?? result?.items ?? result?.entries ?? result?.records ?? result?.history ?? result?.rows;
-  if (Array.isArray(rows)) return rows;
-  if (Array.isArray(result)) return result;
-  return arr(Object.values(result ?? {}).find(Array.isArray));
-}
-
-/**
- * The session's completed turns, as the host bills them (subagents included): their total
- * tokens and when the last one ended. null when the history cannot be read.
- */
-async function completedUsage(sessionId) {
-  const now = Date.now();
-  let total = 0, lastEnded = 0, cursor = "";
-  for (let page = 0; page < HISTORY_PAGES; page++) {
-    const result = await op("stats/getTokenUsageHistory", [{ sessionId, fromMs: now - HISTORY_MS, toMs: now, limit: 500, ...(cursor ? { cursor } : {}) }]).catch(() => null);
-    if (!result) return page ? { total, lastEnded } : null;
-    for (const row of usageRowsFrom(result)) {
-      if (row?.sessionId && row.sessionId !== sessionId) continue;
-      total += tokensOf(row);
-      lastEnded = Math.max(lastEnded, ts(row?.endedAt ?? row?.ended_at));
-    }
-    cursor = str(result.nextCursor);
-    if (!cursor) break;
-  }
-  return { total, lastEnded };
-}
-
-/**
- * The session's token consumption: its completed turns from the usage history, plus what the
- * transcript reports since the last of them ended (the running turn, or one that was stopped).
- */
-function sessionTokens(completed, messages) {
-  const since = completed?.lastEnded ?? 0;
-  let live = 0;
-  for (const m of messages) {
-    if (ts(m?.createdAt ?? m?.created_at) > since) live += tokensOf(usageOf(m));
-  }
-  return (completed?.total ?? 0) + live;
-}
 
 /** A rough token count: about 4 characters per token, one per CJK character. */
 function estimateTokens(text) {
@@ -575,15 +528,6 @@ async function poll() {
     const fresh = delegationsFrom(messages).filter((x) => !x.earlier || prevRun.has(x.id)).map(({ earlier, ...x }) => x);
     const subs = mergeSubs(mem.subs, fresh, running || mem.idleStreak < 2);
     mem.subs = subs;
-    // completed turns are read once per change: a running session only adds to the open turn,
-    // and the first idle polls catch the turn the host has just recorded as completed
-    if (!mem.usage || (!running && (mem.usage.updatedAt !== s.updatedAt || mem.idleStreak <= 2))) {
-      const completed = await completedUsage(s.id);
-      mem.usage = { updatedAt: s.updatedAt, completed, tokens: 0 };
-    }
-    // the open turn's messages can scroll out of the window too: within one turn, never go down
-    const tokens = Math.max(sessionTokens(mem.usage.completed, messages), mem.usage.tokens);
-    mem.usage.tokens = tokens;
     mem.toolSeen = mem.toolSeen ?? new Map();
     const toolTok = toolTokens(messages, mem.toolSeen);
     const awaiting = !running && !question && !plan ? awaitingReply(messages) : null;
@@ -603,7 +547,6 @@ async function poll() {
       task: lastUserText(messages).slice(0, 220) || title,
       status: statusKey,
       model: str(status.modelId) || s.model,
-      tokens,
       toolTokens: toolTok,
       active: s.id === activeSessionId,
       question,
