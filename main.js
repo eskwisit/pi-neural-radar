@@ -8,7 +8,8 @@
  * `autoOpen` setting, and carries out the actions the user picks in the view's drawer.
  *
  * Data comes from the host's desktop control operations (`desktop.control`):
- *   session/list, agent/getStatus, session/get, plans/pending   — read
+ *   session/list, agent/getStatus, session/get, plans/pending,
+ *   stats/getTokenUsageHistory                                   — read
  *   session/open, agent/prompt, agent/stop, agent/abort          — act on the user's click
  *   plans/resolve                                                — "dangerous": sent with confirm
  * The host has no "turn started" event for plugins, so the radar polls. It polls fast while
@@ -30,6 +31,9 @@ const REPLY_KEEP_MS = 2 * 60 * 60 * 1000; // an agent waiting for your reply sta
 const CANDIDATES = 8; // most recently updated sessions considered each poll
 const STALE_MS = 6 * 60 * 60 * 1000; // sessions untouched for this long are not polled
 const REOPEN_COOLDOWN_MS = 30 * 1000;
+// token usage history window: the host accepts at most 365 days per read
+const HISTORY_MS = 365 * 24 * 60 * 60 * 1000 - 60 * 1000;
+const HISTORY_PAGES = 20; // at most 500 turns per page
 
 let autoOpen = "working";
 let timer = null;
@@ -51,8 +55,59 @@ const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
 const arr = (v) => (Array.isArray(v) ? v : []);
 const ts = (v) => (typeof v === "number" ? v : v ? Date.parse(v) || 0 : 0);
 const num = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
-/** The session's token consumption, as PI-Desktop counts it: its total, else input + output. */
-const tokensOf = (s) => num(s.totalTokens ?? s.total_tokens) || num(s.inputTokens ?? s.input_tokens) + num(s.outputTokens ?? s.output_tokens);
+/**
+ * Tokens in one usage record, as PI-Desktop counts them: its total, else input + output +
+ * cache read + cache write.
+ */
+const tokensOf = (u) => !u || typeof u !== "object" ? 0 :
+  num(u.totalTokens ?? u.total_tokens) ||
+  num(u.inputTokens ?? u.input_tokens) + num(u.outputTokens ?? u.output_tokens) +
+  num(u.cacheReadTokens ?? u.cache_read_tokens) + num(u.cacheWriteTokens ?? u.cache_write_tokens);
+/** A transcript message's provider usage (one model operation), if it carries one. */
+const usageOf = (m) => m?.usage ?? m?.meta?.usage;
+
+// ---------- token consumption ----------
+/** The turn rows of a stats/getTokenUsageHistory page. */
+function usageRowsFrom(result) {
+  const rows = result?.turns ?? result?.items ?? result?.entries ?? result?.records ?? result?.history ?? result?.rows;
+  if (Array.isArray(rows)) return rows;
+  if (Array.isArray(result)) return result;
+  return arr(Object.values(result ?? {}).find(Array.isArray));
+}
+
+/**
+ * The session's completed turns, as the host bills them (subagents included): their total
+ * tokens and when the last one ended. null when the history cannot be read.
+ */
+async function completedUsage(sessionId) {
+  const now = Date.now();
+  let total = 0, lastEnded = 0, cursor = "";
+  for (let page = 0; page < HISTORY_PAGES; page++) {
+    const result = await op("stats/getTokenUsageHistory", [{ sessionId, fromMs: now - HISTORY_MS, toMs: now, limit: 500, ...(cursor ? { cursor } : {}) }]).catch(() => null);
+    if (!result) return page ? { total, lastEnded } : null;
+    for (const row of usageRowsFrom(result)) {
+      if (row?.sessionId && row.sessionId !== sessionId) continue;
+      total += tokensOf(row);
+      lastEnded = Math.max(lastEnded, ts(row?.endedAt ?? row?.ended_at));
+    }
+    cursor = str(result.nextCursor);
+    if (!cursor) break;
+  }
+  return { total, lastEnded };
+}
+
+/**
+ * The session's token consumption: its completed turns from the usage history, plus what the
+ * transcript reports since the last of them ended (the running turn, or one that was stopped).
+ */
+function sessionTokens(completed, messages) {
+  const since = completed?.lastEnded ?? 0;
+  let live = 0;
+  for (const m of messages) {
+    if (ts(m?.createdAt ?? m?.created_at) > since) live += tokensOf(usageOf(m));
+  }
+  return (completed?.total ?? 0) + live;
+}
 
 // ---------- reading sessions ----------
 function sessionsFrom(listResult) {
@@ -65,7 +120,6 @@ function sessionsFrom(listResult) {
       model: str(s.modelId ?? s.model_id ?? s.model),
       mode: str(s.mode),
       permissionMode: str(s.permissionMode ?? s.permission_mode),
-      tokens: tokensOf(s),
     }))
     .filter((s) => s.id);
 }
@@ -426,6 +480,15 @@ async function poll() {
     const fresh = delegationsFrom(messages).filter((x) => !x.earlier || prevRun.has(x.id)).map(({ earlier, ...x }) => x);
     const subs = mergeSubs(mem.subs, fresh, running || mem.idleStreak < 2);
     mem.subs = subs;
+    // completed turns are read once per change: a running session only adds to the open turn,
+    // and the first idle polls catch the turn the host has just recorded as completed
+    if (!mem.usage || (!running && (mem.usage.updatedAt !== s.updatedAt || mem.idleStreak <= 2))) {
+      const completed = await completedUsage(s.id);
+      mem.usage = { updatedAt: s.updatedAt, completed, tokens: 0 };
+    }
+    // the open turn's messages can scroll out of the window too: within one turn, never go down
+    const tokens = Math.max(sessionTokens(mem.usage.completed, messages), mem.usage.tokens);
+    mem.usage.tokens = tokens;
     const awaiting = !running && !question && !plan ? awaitingReply(messages) : null;
     const asked = awaiting?.ask ?? null;
     // once you have opened the session and seen the question, leaving it means "not now":
@@ -445,7 +508,7 @@ async function poll() {
       task: lastUserText(messages).slice(0, 220) || title,
       status: statusKey,
       model: str(status.modelId) || s.model,
-      tokens: s.tokens,
+      tokens,
       active: s.id === activeSessionId,
       question,
       reply,
