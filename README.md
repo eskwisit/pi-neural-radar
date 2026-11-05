@@ -12,13 +12,13 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   agent with subagents keeps its own cluster (you → agent → subagents), and so does a second agent.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
-- **Hover an agent for its tooltip.** The first line is what it works on now: the first line of
+- **Every agent shows its tooltip.** The first line is what it works on now: the first line of
   your latest prompt that names a topic, so it follows the session when it changes subject (short
   go-aheads like "ok" or "build it" are skipped). The second line is its state, then one live
   detail, the tokens its own tool calls added to its context (an estimate from their size), and
   how long ago it last did something, e.g. `Working · Edit index.html · 12.4K tool ctx · 12s ago`.
   The detail is the question or plan waiting for you, the running subagent and its task, or the
-  tool in use and its target. The tooltip stays while the agent's drawer is open. A subagent reads
+  tool in use and its target. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent reads
   as its role (`explorer`, `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
   with a question for you, or a plan waits for approval), working agents further out, finished
