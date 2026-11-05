@@ -218,6 +218,28 @@ describe("delegationsFrom", () => {
   it("survives malformed messages", () => {
     assert.deepEqual(t.delegationsFrom([null, {}, { role: "tool", toolName: "TaskWait" }]), []);
   });
+
+  it("counts the tokens of each subagent's own messages, not the agent's", () => {
+    const subs = t.delegationsFrom([
+      user("go"),
+      assistant("launching", { usage: { totalTokens: 1000 } }),
+      launch("d1", "explorer", "map"),
+      launch("d2", "fixer", "fix"),
+      assistant("a", { parentToolCallId: "call-d1", usage: { totalTokens: 30 } }),
+      tool("Read", { parentToolCallId: "call-d1" }),
+      assistant("b", { meta: { parentToolCallId: "call-d1", usage: { inputTokens: 1, outputTokens: 2 } } }),
+    ]);
+    assert.deepEqual(subs.map((s) => [s.id, s.tokens]), [["d1", 33], ["d2", 0]]);
+  });
+
+  it("counts the tokens of a subagent that is still launching under its call id", () => {
+    const subs = t.delegationsFrom([
+      user("go"),
+      tool("Task", { toolCallId: "c7", toolArgs: { agent: "explorer", description: "map" } }),
+      assistant("a", { parentToolCallId: "c7", usage: { totalTokens: 9 } }),
+    ]);
+    assert.deepEqual(subs.map((s) => [s.id, s.tokens]), [["c7", 9]]);
+  });
 });
 
 describe("mergeSubs", () => {
@@ -235,6 +257,11 @@ describe("mergeSubs", () => {
 
   it("forgets finished subagents that are no longer in the transcript", () => {
     assert.deepEqual(t.mergeSubs([sub("a", "done")], [], true), []);
+  });
+
+  it("never lowers a subagent's tokens when its messages leave the transcript window", () => {
+    const out = t.mergeSubs([{ ...sub("a", "run"), tokens: 500 }], [{ ...sub("a", "run"), tokens: 20 }], true);
+    assert.equal(out[0].tokens, 500);
   });
 
   it("lets fresh data win and accepts a missing previous list", () => {
