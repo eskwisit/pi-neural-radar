@@ -33,7 +33,7 @@ below). The review still has to treat it as High: the tier is about capability, 
 | Permission | Used for | Host calls | Where |
 |---|---|---|---|
 | `ui.view` | The radar view docked in the work panel, which opens automatically according to the `autoOpen` setting or from the command | `pi.ui.revealView({ viewId: "radar" })` | `maybeReveal()` (automatic, after the first poll only, with a 30 s cooldown on "started working"), and the `neural-radar.open` command registered in `onLoad()` |
-| `desktop.control` | **Read:** session list, agent status, transcripts, subagents (read from the transcript), pending plans, token usage history | `pi.desktop.invoke` with `session/list`, `agent/getStatus`, `session/get` (`messageLimit: 60`), `plans/pending`, `stats/getTokenUsageHistory` | `poll()` |
+| `desktop.control` | **Read:** session list, agent status, transcripts, subagents (read from the transcript), pending plans | `pi.desktop.invoke` with `session/list`, `agent/getStatus`, `session/get` (`messageLimit: 60`), `plans/pending` | `poll()` |
 | | **Act, only on a click in the drawer:** | `session/open` | `act()` with action `open` or `prefill` |
 | | | `agent/prompt` | `act()` with action `send` |
 | | | `agent/stop`, `agent/abort` | `act()` with action `stop` or `abort` (two-step confirmation in the view) |
@@ -68,10 +68,9 @@ plugin never builds or changes that text, and never calls `composer.suggest` on 
 
 | Action | Source entry | Data read | Destination | Permission | User action / confirmation | Bounds | Cleanup |
 |---|---|---|---|---|---|---|---|
-| Poll the session list | `poll()` ← `loop()` | `session/list`: id, title, updatedAt, model, mode, permissionMode | In-memory `sessionList` | `desktop.control` | none (read-only) | Refreshed at most every 10 s (`LIST_MS`) or after a host event; sessions untouched for 6 h are skipped (`STALE_MS`) | `onUnload()` stops the loop |
+| Poll the session list | `poll()` ← `loop()` | `session/list`: id, title, updatedAt, model, permissionMode | In-memory `sessionList` | `desktop.control` | none (read-only) | Refreshed at most every 10 s (`LIST_MS`) or after a host event; sessions untouched for 6 h are skipped (`STALE_MS`) | `onUnload()` stops the loop |
 | Read agent status | `poll()` | `agent/getStatus`: isRunning, pendingPlanId, planningState, modelId | In-memory model | `desktop.control` | none | 8 most recent sessions (`CANDIDATES`), plus the active one and any that is running, waiting for you or has a pending plan | same |
 | Read transcripts | `poll()` | `session/get` with `messageLimit: 60` | In-memory model → view (`radar.state`) | `desktop.control` | none | 60 messages per session. An idle session is re-read only after it changed. Excerpts: task 220 chars, label 48, asked question 320, context 280, activity lines 140, at most 12 activity entries | same |
-| Read token usage | `poll()` → `completedUsage()` | `stats/getTokenUsageHistory` `{ sessionId, fromMs, toMs, limit: 500, cursor }`: per completed turn, its token counts and end time | In-memory model → view (one total per agent) | `desktop.control` | none (read-only) | the polled sessions only; a window of at most 365 days, at most 20 pages of 500 turns; re-read only when an idle session changed | same |
 | Read pending plans | `poll()` | `plans/pending` (`[{}]` once per poll; `[{ sessionId }]` when a status reports a plan the global read missed) | In-memory model → view | `desktop.control` | none | one global read per poll | same |
 | Show the radar | view `pull()` → `onPanelInvoke("radar.state")` | the model above | the plugin's own view, rendered with `esc()` | `ui.view` | none | view pulls every 1 s while shown, every 5 s while hidden | view timers end with the webview; the main side holds no handle to the view |
 | Open the view automatically | `maybeReveal()` | the setting `autoOpen` | `pi.ui.revealView` | `ui.view` | Setting **Open the radar automatically** (`off` disables it) | never on the first poll; 30 s cooldown for "started working" (`REOPEN_COOLDOWN_MS`) | none needed |
