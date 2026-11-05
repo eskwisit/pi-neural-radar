@@ -135,7 +135,6 @@ const COPY = {
     waitingOnYou: '{n} waiting on you',
     nothingWaiting: 'Idle',
     you: 'You',
-    youTag: 'you',
     untitledSession: 'Untitled session',
     questionForYou: 'Question for you',
     moreQuestionsOne: '+{n} more question',
@@ -211,7 +210,6 @@ const COPY = {
     waitingOnYou: '{n} 个在等你',
     nothingWaiting: '空闲',
     you: '你',
-    youTag: '你',
     untitledSession: '未命名会话',
     questionForYou: '向你提问',
     moreQuestionsOne: '还有 {n} 个问题',
@@ -460,7 +458,6 @@ function mkAgent(id) {
 }
 
 let selected = null, selectedSub = null, hover = null;
-let solo = null; // the only agent on the radar, with no subagents: it is you, drawn as the centre node
 let draft = '', connected = null, panelSig = '', lastError = null;
 let logOpen = false; // the Activity section starts folded for each agent you open
 let subsOpen = false; // so does Subagents, unless you open the drawer from one of its subagents
@@ -489,8 +486,6 @@ function sync(model) {
     if (selected === agents[i].id) select(null);
     agents.splice(i, 1);
   }
-  // an agent with subagents keeps its own node: you -> agent -> subagents, never subagents on you
-  solo = agents.length === 1 && agents[0].subs.length === 0 ? agents[0] : null;
   lastError = model.error || null;
   renderQueue(); renderEmpty();
   // the drawer is rebuilt only when its agent's data changed, so clicks are never lost
@@ -522,7 +517,7 @@ const MAX_DEG = 4;
 function buildGraph() {
   for (const p of filler) p.off = p.x < -90 || p.x > W + 90 || p.y < -90 || p.y > H + 90;
   nodes = [...you.pts, ...filler.filter(p => !p.off)];
-  for (const a of agents) { if (a !== solo) nodes.push(...a.pts); for (const s of a.subs) nodes.push(...s.pts); }
+  for (const a of agents) { nodes.push(...a.pts); for (const s of a.subs) nodes.push(...s.pts); }
   nodes.forEach((p, i) => { p.i = i; p.deg = 0; p.ideg = 0; p.edeg = 0; p.own = null; });
   const spacing = Math.sqrt((W * 1.14) * (H * 1.14) / filler.length);
   const thr = clamp(1.9 * spacing, 50, 150), cand = [];
@@ -562,8 +557,8 @@ function buildGraph() {
     near.sort((x, y) => x[0] - y[0]);
     for (const [d2, q] of near) { if (p.deg >= MIN_DEG) break; add(p, q, Math.sqrt(d2) / (thr * (p.sc || 1))); }
   }
-  // a subagent is always wired to its agent (to you, when that agent is you)
-  for (const a of agents) for (const s of a.subs) add(s.hub, a === solo ? you.hub : a.hub, 0.5);
+  // a subagent is always wired to its agent
+  for (const a of agents) for (const s of a.subs) add(s.hub, a.hub, 0.5);
   // one connected network: join every separate patch along the shortest available link
   const par = new Int32Array(nodes.length).map((_, i) => i);
   const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
@@ -626,7 +621,6 @@ function update(dt, t) {
   // agent targets: distance along the network = 1 - attention
   const targets = agents.map(a => {
     a.attention = lerp(a.attention, a.target, Math.min(1, dt * 1.5));
-    if (a === solo) return [you.x, you.y];
     const [x, y] = placeAgent(a), n = a.subs.length;
     if (n <= 3) return [x, y];
     // a wide fan (more than 3 subagents) needs room inside the radar for its labels
@@ -643,7 +637,7 @@ function update(dt, t) {
   // slides so it never ends up off screen or under the drawer
   boxT.w = boxBase.w; boxT.h = boxBase.h; boxT.x = boxBase.x; boxT.y = boxBase.y;
   const si = selected ? agents.findIndex(a => a.id === selected) : -1, sel = agents[si];
-  if (sel && sel !== solo && !isNaN(sel.x)) {
+  if (sel && !isNaN(sel.x)) {
     // cluster extent: the agent and its subagents, measured around where the agent is heading
     let x0 = sel.x, x1 = sel.x, y0 = sel.y, y1 = sel.y;
     for (const s of sel.subs) if (s.x) { x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y); }
@@ -651,10 +645,9 @@ function update(dt, t) {
     const cx = tx + (x0 + x1) / 2 - sel.x, cy = ty + (y0 + y1) / 2 - sel.y;
     boxT.x = box.x + vx - cx; boxT.y = box.y + vy - cy;
   }
-  const R = Math.min(box.w, box.h) / 2;
   const subT = [];
   agents.forEach((a, i) => {
-    if (isNaN(a.x)) { a.x = targets[i][0] + (a === solo ? 0 : 60); a.y = targets[i][1]; }
+    if (isNaN(a.x)) { a.x = targets[i][0] + 60; a.y = targets[i][1]; }
     a.x = lerp(a.x, targets[i][0], Math.min(1, dt * 1.8));
     a.y = lerp(a.y, targets[i][1], Math.min(1, dt * 1.8));
     a.flash = Math.max(0, a.flash - dt * 1.8);
@@ -662,17 +655,10 @@ function update(dt, t) {
     a.subs.forEach((s, k) => {
       const grow = Math.min(1, (now() - s.born) * 1.2);
       let cx, cy, ang, dd;
-      if (a === solo) {
-        // you are the agent: your subagents sit around you, the working ones closer in
-        cx = you.x; cy = you.y;
-        ang = -Math.PI / 2 + 0.4 + (k / Math.max(n, 1)) * Math.PI * 2;
-        dd = R * (s.status === 'run' ? 0.6 : 0.85) * grow;
-      } else {
-        // subagents sit behind the agent, away from you
-        cx = a.x; cy = a.y;
-        ang = away + (n > 1 ? (k / (n - 1) - 0.5) * fanArc(n) : 0);
-        dd = (fanR(n) + (k % 2) * (n > 3 ? 34 : 22)) * K * grow;
-      }
+      // subagents sit behind the agent, away from you
+      cx = a.x; cy = a.y;
+      ang = away + (n > 1 ? (k / (n - 1) - 0.5) * fanArc(n) : 0);
+      dd = (fanR(n) + (k % 2) * (n > 3 ? 34 : 22)) * K * grow;
       subT.push({ s, cx, cy, ang, dd, tx: cx + Math.cos(ang) * dd, ty: cy + Math.sin(ang) * dd });
     });
   });
@@ -689,7 +675,6 @@ function update(dt, t) {
   const blockers = [around(you.x, you.y, 50 * K)];
   if (you.label) blockers.push(you.label);
   for (const a of agents) {
-    if (a === solo) continue;
     blockers.push(around(a.x, a.y, 40 * K));
     if (a.label) blockers.push(a.label);
   }
@@ -728,14 +713,11 @@ function update(dt, t) {
   // fire
   for (const a of agents) {
     const asking = a.status === 'need' || a.status === 'approve';
-    const hub = a === solo ? you.hub : a.hub;
+    const hub = a.hub;
     const rate = asking ? 1.1 * a.attention : a.status === 'run' ? 0.12 : 0;
     if (Math.random() < rate * dt) {
-      if (a === solo) you.flash = Math.max(you.flash, asking ? 1 : 0.5); // you are the agent: you light up
-      else {
-        a.flash = 1;
-        spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
-      }
+      a.flash = 1;
+      spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
     }
     for (const s of a.subs) {
       if (s.dispatch) { s.dispatch = false; spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
@@ -836,8 +818,6 @@ function draw(time) {
     }
     if (p.owner === you && p.hub) {
       r = p.r + you.flash * 2.5;
-      // you are the agent: the centre takes its colour while it waits for you
-      if (solo && (solo.status === 'need' || solo.status === 'approve')) { col = ST[solo.status]; r += 1.4 * (0.5 + 0.5 * Math.sin(time * 3 + solo.seed)); }
     }
     ctx.globalAlpha = alpha; ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
@@ -863,10 +843,6 @@ function draw(time) {
     ctx.beginPath(); ctx.roundRect(x, y, w, h, 7); ctx.fill(); ctx.stroke();
     ctx.globalAlpha = 1;
   };
-  const statusText = a => {
-    const n = a.subs.filter(x => x.status === 'run').length;
-    return `${a.reply ? t('needsReply') : statusLabel(a.status)}${n ? ` · ${plural(n, 'subagentsOne', 'subagentsMany')}` : ''}`;
-  };
   // stacking order, bottom to top: subagents < agents < You (main). Later draws cover earlier ones.
   // agent tooltip layout first, so the You label can dodge it and subagents can be drawn underneath.
   // Every agent always shows its tooltip; the hovered one, then the open one, are drawn on top.
@@ -874,7 +850,6 @@ function draw(time) {
   const raised = a => (selected === a.id ? 2 : hover?.a === a && !hover.s ? 1 : 0);
   const agentLabels = [];
   for (const a of agents) {
-    if (a === solo) { a.label = null; continue; }
     // line 1: what it works on now; line 2: its state, then one concrete fact, then how long ago
     const desc = clip(descOf(a), 36);
     const [stat, detail] = tipLine(a);
@@ -912,7 +887,7 @@ function draw(time) {
   }
 
   // 2) agents (middle): node and tooltip are painted over any subagent label beneath
-  for (const a of agents) if (a !== solo) redrawCluster(a);
+  for (const a of agents) redrawCluster(a);
   for (const { a, stat, detail, desc, px, py, pw, ph } of agentLabels) {
     const open = selected === a.id;
     pill(px, py, pw, ph, 1, open ? 'rgba(255,255,255,0.45)' : (a.status === 'need' || a.status === 'approve') ? ST[a.status] + '66' : null);
@@ -927,8 +902,7 @@ function draw(time) {
   // 3) You / main (top)
   let lyou = 74 * K;
   const waiting = agents.filter(a => a.status === 'need' || a.status === 'approve').length;
-  // a single agent is you: the You label carries its status (no prompt line)
-  const ysub = solo ? statusText(solo) : waiting ? t('waitingOnYou', { n: waiting }) : t('nothingWaiting');
+  const ysub = waiting ? t('waitingOnYou', { n: waiting }) : t('nothingWaiting');
   const youText = t('you');
   ctx.font = '600 13px ui-sans-serif, system-ui'; const yw1 = ctx.measureText(youText).width;
   ctx.font = '10.5px ui-sans-serif, system-ui'; const yw2 = ctx.measureText(ysub).width;
@@ -939,12 +913,11 @@ function draw(time) {
   if (overlaps(youRect(lyou)) && !overlaps(youRect(-74 * K - yph + 16))) lyou = -74 * K - yph + 16;
   you.label = youRect(lyou);
   redrawCluster(you);
-  const soloAsks = solo && (solo.status === 'need' || solo.status === 'approve');
-  pill(you.x - ypw / 2, you.y + lyou - 15, ypw, yph, 1, solo && selected === solo.id ? 'rgba(255,255,255,0.45)' : soloAsks ? ST[solo.status] + '66' : null);
+  pill(you.x - ypw / 2, you.y + lyou - 15, ypw, yph, 1, null);
   ctx.textAlign = 'center';
   ctx.font = '600 13px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.96)';
   ctx.fillText(youText, you.x, you.y + lyou);
-  ctx.font = '10.5px ui-sans-serif, system-ui'; ctx.fillStyle = solo ? ST[solo.status] : 'rgba(216,200,255,0.85)';
+  ctx.font = '10.5px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(216,200,255,0.85)';
   ctx.fillText(ysub, you.x, you.y + lyou + 15);
 }
 
@@ -975,12 +948,11 @@ function hitTest(x, y) {
   const inRect = L => L && x >= L.x && x <= L.x + L.w && y >= L.y && y <= L.y + L.h;
   // same order as drawn, top first: You (main) > agents > subagents
   const onYou = Math.hypot(x - you.x, y - you.y) < 62 * K || inRect(you.label);
-  // a single agent is you: the centre stands for it
-  if (onYou) return solo ? { a: solo, you: true } : { you: true };
+  if (onYou) return { you: true };
   // tooltips can overlap: the one drawn last (on top) wins
   const onLabel = agents.filter(a => inRect(a.label)).sort((p, q) => q.label.z - p.label.z)[0];
   if (onLabel) return { a: onLabel };
-  for (const a of order) if (a !== solo && Math.hypot(x - a.x, y - a.y) < 42 * K) return { a };
+  for (const a of order) if (Math.hypot(x - a.x, y - a.y) < 42 * K) return { a };
   for (const a of order) for (const s of a.subs) if (Math.hypot(x - s.x, y - s.y) < 20 * K || inRect(s.label)) return { a, s };
   return null;
 }
@@ -1047,7 +1019,7 @@ function renderEmpty() {
 
 function renderQueue() {
   const waiting = agents.filter(a => a.status === 'need' || a.status === 'approve').sort((a, b) => b.attention - a.attention);
-  queueEl.innerHTML = waiting.map(a => `<button class="chip" data-id="${esc(a.id)}"><span class="dot" style="color:${ST[a.status]}"></span>${esc(a === solo ? t('you') : nameOf(a, 24))} · ${esc(clip(descOf(a), 32))}</button>`).join('');
+  queueEl.innerHTML = waiting.map(a => `<button class="chip" data-id="${esc(a.id)}"><span class="dot" style="color:${ST[a.status]}"></span>${esc(nameOf(a, 24))} · ${esc(clip(descOf(a), 32))}</button>`).join('');
   queueEl.querySelectorAll('[data-id]').forEach(b => b.onclick = () => select(selected === b.dataset.id ? null : b.dataset.id));
 }
 
@@ -1068,7 +1040,7 @@ function renderPanel() {
     <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
     <div class="top">
     <div class="head">
-    <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span>${a === solo ? `<span style="color:var(--muted);font-weight:400">${esc(t('youTag'))}</span>` : ''}</h2>
+    <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span></h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
     <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
