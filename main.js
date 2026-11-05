@@ -38,7 +38,7 @@ const HISTORY_PAGES = 20; // at most 500 turns per page
 let autoOpen = "working";
 let timer = null;
 let stopped = false;
-let model = { updatedAt: 0, activeSessionId: null, agents: [], error: null };
+let model = { agents: [], error: null };
 const memory = new Map(); // sessionId → { running, subCount, attention, lastActive, updatedAt, agent }
 let sessionList = [];
 let listAt = 0;
@@ -159,15 +159,10 @@ function sessionsFrom(listResult) {
       title: str(s.title ?? s.name),
       updatedAt: ts(s.updatedAt ?? s.updated_at ?? s.lastActivityAt),
       model: str(s.modelId ?? s.model_id ?? s.model),
-      mode: str(s.mode),
       permissionMode: str(s.permissionMode ?? s.permission_mode),
     }))
     .filter((s) => s.id);
 }
-
-// role keys: the session's mode (agent, plan or goal)
-const MODE_ROLE = { agent: "agent", plan: "plan", goal: "goal" };
-const roleOf = (mode) => MODE_ROLE[mode] ?? "agent";
 
 /** Pending Plan / Goal approvals; plans/pending answers `{ plans: [...] }`. */
 function plansFrom(result) {
@@ -289,13 +284,12 @@ function delegationsFrom(messages) {
     if (typeof d === "string") d = { delegationId: d };
     const id = str(d?.delegationId);
     if (!id) return;
-    const prev = subs.get(id) ?? { id, role: "", description: "", status: "running", model: "" };
+    const prev = subs.get(id) ?? { id, role: "", description: "", status: "running" };
     subs.set(id, {
       ...prev,
       role: str(d.agent) || prev.role,
       description: str(fallback.description) || prev.description,
       status: str(d.status) || prev.status,
-      model: str(d.modelId) || prev.model,
       toolCalls: d.toolCalls ?? prev.toolCalls,
       lastTool: str(d.lastToolName) || prev.lastTool,
     });
@@ -316,7 +310,7 @@ function delegationsFrom(messages) {
         }
         else if (b.callId && !b.result && !b.completedAt) {
           // still launching: keep a provisional entry keyed by the call id
-          subs.set(str(b.callId), { id: str(b.callId), role: str(b.args?.agent), description: str(b.args?.description), status: "running", model: "" });
+          subs.set(str(b.callId), { id: str(b.callId), role: str(b.args?.agent), description: str(b.args?.description), status: "running" });
         }
         // a launch that came back without a delegation failed: nothing is running
       } else if (name === "TaskWait") {
@@ -603,9 +597,7 @@ async function poll() {
     const title = s.title; // empty: the view shows "Untitled session" in the user's language
     const agent = {
       id: s.id,
-      // the view names the neuron after the session title, with what it works on below;
-      // role ("agent" | "plan" | "goal") is the session's mode
-      role: roleOf(s.mode),
+      // the view names the neuron after the session title, with what it works on below
       desc: describeTask(messages, title),
       title,
       task: lastUserText(messages).slice(0, 220) || title,
@@ -635,7 +627,7 @@ async function poll() {
   }
 
   firstPoll = false;
-  model = { updatedAt: now, activeSessionId, agents, error: null };
+  model = { agents, error: null };
   // poll fast only while an agent is actually running; one waiting for you is picked up by
   // the turnEnded / activated events (and the slow poll) as soon as you act
   return agents.some((a) => a.status === "run");
@@ -661,7 +653,7 @@ async function loop() {
   try {
     busy = await poll();
   } catch (error) {
-    model = { ...model, updatedAt: Date.now(), error: String(error?.message ?? error) };
+    model = { ...model, error: String(error?.message ?? error) };
   } finally {
     inFlight = false;
   }
@@ -741,7 +733,7 @@ function settle(id, patch) {
 
 async function onPanelInvoke(channel, payload) {
   try {
-    if (channel === "radar.state") return { ok: true, model, autoOpen };
+    if (channel === "radar.state") return { ok: true, model };
     if (channel === "radar.action") {
       const result = await act(payload ?? {});
       pollSoon();
