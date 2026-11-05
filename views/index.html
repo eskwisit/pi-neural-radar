@@ -1003,13 +1003,12 @@ function draw(time) {
   // 3) You / main (top)
   let lyou = 74 * K;
   const waiting = agents.filter(a => a.status === 'need' || a.status === 'approve').length;
-  // a single agent is you: the You label carries its status and what it works on
+  // a single agent is you: the You label carries its status (no prompt line)
   const ysub = solo ? statusText(solo) : waiting ? t('waitingOnYou', { n: waiting }) : t('nothingWaiting');
-  const ydesc = solo ? clip(descOf(solo), 48) : '';
   const youText = t('you');
   ctx.font = '600 13px ui-sans-serif, system-ui'; const yw1 = ctx.measureText(youText).width;
-  ctx.font = '10.5px ui-sans-serif, system-ui'; const yw2 = ctx.measureText(ysub).width, yw3 = ydesc ? ctx.measureText(ydesc).width : 0;
-  const ypw = Math.max(yw1, yw2, yw3) + 20, yph = ydesc ? 52 : 38;
+  ctx.font = '10.5px ui-sans-serif, system-ui'; const yw2 = ctx.measureText(ysub).width;
+  const ypw = Math.max(yw1, yw2) + 20, yph = 38;
   // put the You label above you when an agent's label sits where it would go
   const youRect = dy => ({ x: you.x - ypw / 2, y: you.y + dy - 15, w: ypw, h: yph });
   const overlaps = r => agents.some(a => a.label && !(r.x > a.label.x + a.label.w || r.x + r.w < a.label.x || r.y > a.label.y + a.label.h || r.y + r.h < a.label.y));
@@ -1023,7 +1022,6 @@ function draw(time) {
   ctx.fillText(youText, you.x, you.y + lyou);
   ctx.font = '10.5px ui-sans-serif, system-ui'; ctx.fillStyle = solo ? ST[solo.status] : 'rgba(216,200,255,0.85)';
   ctx.fillText(ysub, you.x, you.y + lyou + 15);
-  if (ydesc) { ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.fillText(ydesc, you.x, you.y + lyou + 29); }
 }
 
 let last = now(), lastStep = 0;
