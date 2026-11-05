@@ -57,7 +57,6 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 - **Approve / Reject** a Plan or Goal that is waiting for you. Approving runs it in the session's
   current permission mode
 - **Send to agent**: a message delivered to the running agent
-- **Pre-fill in session**: switch to the session and offer your text in its composer
 - **Open session**, **Stop** (at the next safe point) and **Abort** (now); Stop and Abort ask for a
   second click
 
@@ -67,7 +66,6 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 |---|---|
 | `ui.view` | the radar view in the work panel, and opening it automatically |
 | `desktop.control` | reading sessions, agent status, subagents and pending plans; switching session, sending a message, approving a plan, stopping an agent |
-| `composer.suggest` | offering your text in the session composer ("Pre-fill in session") |
 
 `desktop.control` is a high-risk permission: it lets the plugin act on your sessions. The plugin only
 acts on a session when you click a button in the drawer; everything else it does is read-only,
@@ -81,9 +79,8 @@ It **can**:
 - read your recent sessions: their titles, agent status, the last 60 messages of each
   transcript, subagents and pending Plan / Goal approvals. This is shown only in the radar view, on
   your machine
-- when you click: open a session, send the text you typed to the agent, put your text in a
-  session's composer (you still send it), approve or reject the plan shown in the drawer, or stop
-  or abort an agent. Stop and Abort need a second click within 3 seconds
+- when you click: open a session, send the text you typed to the agent, approve or reject the plan
+  shown in the drawer, or stop or abort an agent. Stop and Abort need a second click within 3 seconds
 - open its own view in the work panel when an agent starts working or needs you (setting
   **Open the radar automatically**, which can be turned off)
 
