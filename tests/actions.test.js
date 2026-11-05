@@ -22,12 +22,11 @@ afterEach(async () => {
 const action = (main, payload) => main.onPanelInvoke("radar.action", payload);
 
 describe("panel bridge", () => {
-  it("answers radar.state with the model and the setting", async () => {
+  it("answers radar.state with the model", async () => {
     const { main } = fresh();
     const r = await main.onPanelInvoke("radar.state", {});
     assert.equal(r.ok, true);
     assert.ok(Array.isArray(r.model.agents));
-    assert.equal(r.autoOpen, "working");
   });
 
   it("rejects an unknown channel without calling the host", async () => {

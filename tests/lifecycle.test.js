@@ -272,11 +272,11 @@ describe("lifecycle", () => {
   });
 
   it("load survives a failing command registration and settings read", async () => {
-    const { pi, main } = fresh({ respond: host({ sessions: [] }) });
+    const { pi, main, t } = fresh({ respond: host({ sessions: [] }) });
     pi.commands.register = () => Promise.reject(permissionError("commands"));
     pi.plugin.getSettings = () => Promise.reject(new Error("no settings"));
     await assert.doesNotReject(main.onLoad());
-    assert.equal((await main.onPanelInvoke("radar.state")).autoOpen, "working");
+    assert.equal(t.autoOpen, "working");
   });
 
   it("unload survives a failing command unregistration", async () => {
@@ -288,12 +288,12 @@ describe("lifecycle", () => {
 
   it("only accepts known autoOpen values and re-reads them when settings change", async () => {
     const settings = { autoOpen: "rm -rf" };
-    const { pi, main } = fresh({ respond: host({ sessions: [] }), settings });
+    const { pi, main, t } = fresh({ respond: host({ sessions: [] }), settings });
     await main.onLoad();
-    assert.equal((await main.onPanelInvoke("radar.state")).autoOpen, "working");
+    assert.equal(t.autoOpen, "working");
     settings.autoOpen = "attention";
     pi.on.find(([n]) => n === "plugin:settingsChanged")[1]();
     await sleep(0);
-    assert.equal((await main.onPanelInvoke("radar.state")).autoOpen, "attention");
+    assert.equal(t.autoOpen, "attention");
   });
 });
