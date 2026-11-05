@@ -620,17 +620,6 @@ async function act({ action, sessionId, text, proposal, decision }) {
     case "open":
       await op("session/open", [id]);
       return { ok: true };
-    case "prefill": {
-      // switch to the agent's session, then offer the reply in its composer
-      await op("session/open", [id]);
-      const t = str(text).trim();
-      if (t) {
-        // a refused suggestion (e.g. composer.suggest not granted) is reported, not hidden
-        try { await pi.composer.suggest({ sessionId: id, text: t }); }
-        catch (error) { return { ok: false, message: str(error?.message ?? error) || "composer.suggest failed" }; }
-      }
-      return { ok: true };
-    }
     case "send": {
       const t = str(text).trim();
       if (!t) return { ok: false, message: "empty message" };

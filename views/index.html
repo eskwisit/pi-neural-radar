@@ -156,7 +156,6 @@ const COPY = {
     messageAgent: 'Message the agent',
     draftPlaceholder: 'e.g. Focus on the engine lib first',
     sendHint: '⌘↵ sends',
-    prefill: 'Pre-fill in session',
     sendToAgent: 'Send to agent',
     intervene: 'Intervene',
     openSession: 'Open session',
@@ -188,7 +187,6 @@ const COPY = {
     emptyError: 'PI-Desktop did not answer: {error}',
     toastFailed: 'That did not go through',
     toastSent: 'Sent to the agent',
-    toastSuggested: 'Suggested in the session composer',
     toastApproved: 'Plan approved',
     toastRejected: 'Plan rejected',
     toastStop: 'Stop requested',
@@ -234,7 +232,6 @@ const COPY = {
     messageAgent: '给智能体发消息',
     draftPlaceholder: '例如：先专注于 engine 库',
     sendHint: '⌘↵ 发送',
-    prefill: '在会话中预填',
     sendToAgent: '发送给智能体',
     intervene: '干预',
     openSession: '打开会话',
@@ -266,7 +263,6 @@ const COPY = {
     emptyError: 'PI-Desktop 没有响应：{error}',
     toastFailed: '操作未成功',
     toastSent: '已发送给智能体',
-    toastSuggested: '已填入会话输入框',
     toastApproved: '计划已批准',
     toastRejected: '计划已拒绝',
     toastStop: '已请求停止',
@@ -1100,7 +1096,7 @@ function renderPanel() {
 
     ${live || a.reply ? `<div class="section"><h4>${esc(t(a.reply ? 'replyToAgent' : 'messageAgent'))}</h4>
       <textarea id="draft" placeholder="${esc(t('draftPlaceholder'))}">${esc(draft)}</textarea>
-      <div class="sendrow"><span>${esc(t('sendHint'))}</span><button class="btn" data-act="prefill">${esc(t('prefill'))}</button><button class="btn primary" data-act="send">${esc(t('sendToAgent'))}</button></div></div>` : ''}
+      <div class="sendrow"><span>${esc(t('sendHint'))}</span><button class="btn primary" data-act="send">${esc(t('sendToAgent'))}</button></div></div>` : ''}
 
     <div class="section"><h4>${esc(t('intervene'))}</h4>
       <div class="actions">
@@ -1151,7 +1147,6 @@ function onAction(a, k) {
   if (k === 'log') { logOpen = !logOpen; return renderPanel(); }
   if (k === 'subs') { subsOpen = !subsOpen; return renderPanel(); }
   if (k === 'open') return act(a, { action: 'open' });
-  if (k === 'prefill') { const text = draft.trim(); return act(a, { action: 'prefill', text }, YOU_SIGNAL, text ? t('toastSuggested') : null); }
   if (k === 'send') return send(a);
   if (k === 'approve' || k === 'reject') return act(a, { action: 'plan', decision: k, proposal: a.plan }, k === 'approve' ? YOU_SIGNAL : '#ff6b9a', t(k === 'approve' ? 'toastApproved' : 'toastRejected'));
   if (k === 'stop' || k === 'abort') {
