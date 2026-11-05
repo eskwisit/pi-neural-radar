@@ -20,8 +20,11 @@ afterEach(async () => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const timeouts = () => process.getActiveResourcesInfo().filter((x) => x === "Timeout").length;
 
-/** A host with `sessions`; `running` decides agent/getStatus, `messages` session/get. */
-function host({ sessions, running = () => false, messages = () => [], plans = [] }) {
+/**
+ * A host with `sessions`; `running` decides agent/getStatus, `messages` session/get and `usage`
+ * stats/getTokenUsageHistory (its argument is the request input).
+ */
+function host({ sessions, running = () => false, messages = () => [], plans = [], usage = () => ({ turns: [] }) }) {
   return (req) => {
     const [arg] = req.args;
     switch (req.operation) {
@@ -29,6 +32,7 @@ function host({ sessions, running = () => false, messages = () => [], plans = []
       case "plans/pending": return { plans };
       case "agent/getStatus": return { status: { isRunning: running(arg) } };
       case "session/get": return { messages: messages(arg.id) };
+      case "stats/getTokenUsageHistory": return usage(arg);
       default: return {};
     }
   };
@@ -63,7 +67,7 @@ describe("poll: bounds", () => {
     });
     await t.poll();
     await t.poll();
-    const reads = new Set(["session/list", "plans/pending", "agent/getStatus", "session/get"]);
+    const reads = new Set(["session/list", "plans/pending", "agent/getStatus", "session/get", "stats/getTokenUsageHistory"]);
     for (const r of pi.invocations) assert.ok(reads.has(r.operation), r.operation);
     assert.ok(pi.invocations.every((r) => !r.confirm));
     assert.deepEqual(pi.suggestions, []);
@@ -81,17 +85,63 @@ describe("poll: model", () => {
     assert.equal(agent.reply, evil);
   });
 
-  it("carries the session's token consumption: its total, else input + output", async () => {
+  it("counts a session's tokens from its completed turns, not from the session list", async () => {
     const now = Date.now();
-    const sessions = [
-      { id: "s1", updatedAt: now, totalTokens: 12345, inputTokens: 1, outputTokens: 2 },
-      { id: "s2", updatedAt: now - 1, inputTokens: 300, outputTokens: 45 },
-      { id: "s3", updatedAt: now - 2 },
-    ];
-    const { t } = fresh({ respond: host({ sessions, messages: () => [user("go"), assistant("done?")] }) });
+    const sessions = [{ id: "s1", updatedAt: now, totalTokens: 999 }, { id: "s2", updatedAt: now - 1 }];
+    const usage = (input) => input.sessionId === "s1"
+      ? { turns: [
+          { sessionId: "s1", endedAt: now - 5000, totalTokens: 1000 },
+          // no total: input + output + cache read + cache write
+          { sessionId: "s1", endedAt: now - 4000, inputTokens: 10, outputTokens: 20, cacheReadTokens: 300, cacheWriteTokens: 4000 },
+        ] }
+      : { turns: [] };
+    const { pi, t } = fresh({ respond: host({ sessions, usage, messages: () => [user("go"), assistant("done?")] }) });
     await t.poll();
     const tokens = Object.fromEntries(t.model.agents.map((a) => [a.id, a.tokens]));
-    assert.deepEqual(tokens, { s1: 12345, s2: 345, s3: 0 });
+    assert.deepEqual(tokens, { s1: 5330, s2: 0 });
+    const req = pi.invocations.find((r) => r.operation === "stats/getTokenUsageHistory" && r.args[0].sessionId === "s1").args[0];
+    assert.equal(req.limit, 500);
+    assert.ok(req.toMs - req.fromMs <= 365 * 24 * 3600e3, "the host rejects windows over 365 days");
+    assert.ok(!pi.invocations.some((r) => r.confirm));
+  });
+
+  it("adds the open turn's transcript usage, subagents included, to the completed turns", async () => {
+    const now = Date.now();
+    const usage = () => ({ turns: [{ sessionId: "s1", endedAt: now - 60e3, totalTokens: 1000 }] });
+    const messages = () => [
+      // part of the completed turn: already counted by the history
+      assistant("earlier", { createdAt: now - 70e3, usage: { totalTokens: 400 } }),
+      user("go", { createdAt: now - 30e3 }),
+      assistant("on it", { createdAt: now - 20e3, usage: { totalTokens: 50 } }),
+      { role: "tool", toolName: "Task", toolCallId: "c1", toolArgs: { agent: "explorer", description: "map" }, toolResult: { details: { delegationId: "d1", agent: "explorer", status: "running" } }, toolCompletedAt: now - 19e3, createdAt: now - 19e3 },
+      assistant("found it", { createdAt: now - 10e3, parentToolCallId: "c1", agentName: "explorer", usage: { inputTokens: 5, outputTokens: 7, cacheReadTokens: 100, cacheWriteTokens: 8 } }),
+    ];
+    const { t } = fresh({ respond: host({ sessions: [{ id: "s1", updatedAt: now }], running: () => true, usage, messages }) });
+    await t.poll();
+    const [agent] = t.model.agents;
+    assert.equal(agent.tokens, 1000 + 50 + 120);
+    assert.deepEqual(agent.subs.map((s) => [s.id, s.tokens]), [["d1", 120]]);
+  });
+
+  it("follows the history's cursor and reads it once while the agent runs", async () => {
+    const now = Date.now();
+    const usage = (input) => input.cursor === "p2"
+      ? { turns: [{ sessionId: "s1", endedAt: now - 1000, totalTokens: 2 }] }
+      : { turns: [{ sessionId: "s1", endedAt: now - 2000, totalTokens: 1 }], nextCursor: "p2" };
+    const { pi, t } = fresh({ respond: host({ sessions: [{ id: "s1", updatedAt: now }], running: () => true, usage }) });
+    await t.poll();
+    await t.poll();
+    assert.equal(t.model.agents[0].tokens, 3);
+    assert.equal(pi.invocations.filter((r) => r.operation === "stats/getTokenUsageHistory").length, 2);
+  });
+
+  it("falls back to the transcript when the usage history cannot be read", async () => {
+    const now = Date.now();
+    const usage = () => { throw permissionError(); };
+    const messages = () => [user("go"), assistant("done?", { createdAt: now, usage: { totalTokens: 42 } })];
+    const { t } = fresh({ respond: host({ sessions: [{ id: "s1", updatedAt: now }], usage, messages }) });
+    await t.poll();
+    assert.equal(t.model.agents[0].tokens, 42);
   });
 
   it("does not open the view on the first poll, then opens it when an agent starts working", async () => {
