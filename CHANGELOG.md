@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.21.0
+
+### Features
+
+- **main:** describe agents by the latest prompt that names a topic (`375fd82`)
+- **main:** record a short target for each tool call (`eb0d041`)
+- **main:** estimate the tokens tool calls add to an agent's context (`e28afab`)
+- **view:** name each tool's target in the activity log (`26e540b`)
+- **view:** show current topic, live detail, tool context and age in tooltips (`871ab09`)
+- **view:** show the session's total tokens used in the drawer (`a605de4`)
+- **view:** drop the no-agents hint under you (`9479576`)
+- **view:** show only the status in your label when you work alone (`b48ac49`)
+
+### Fixes
+
+- **view:** keep the drawer title on one line (`8beba6a`)
+
+### Documentation
+
+- **readme:** replace the demo image with a webp showing every state (`8b3b70d`)
+
+### Tests
+
+- **tests:** cover topic prompts, tool targets and tool token estimates (`38cd628`)
+
 ## 0.13.0
 
 ### Features

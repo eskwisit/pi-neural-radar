@@ -8,13 +8,18 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   small clusters behind it. The You label counts the agents waiting on you, or reads **Idle**, and
   the centre is not clickable.
 - **One agent is you.** When a single agent with no subagents is on the radar, it merges into the
-  centre node: the You label shows its status and task instead. An
+  centre node: the You label shows its status instead. An
   agent with subagents keeps its own cluster (you → agent → subagents), and so does a second agent.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
-- **Hover an agent for its tooltip.** The first line is the session name, the second its
-  subagents and its state (Working, Awaiting approval, …); it stays while the agent's drawer is
-  open. A subagent reads as its role (`explorer`, `fixer`, …) with the task it was given.
+- **Hover an agent for its tooltip.** The first line is what it works on now: the first line of
+  your latest prompt that names a topic, so it follows the session when it changes subject (short
+  go-aheads like "ok" or "build it" are skipped). The second line is its state, then one live
+  detail, the tokens its own tool calls added to its context (an estimate from their size), and
+  how long ago it last did something, e.g. `Working · Edit index.html · 12.4K tool ctx · 12s ago`.
+  The detail is the question or plan waiting for you, the running subagent and its task, or the
+  tool in use and its target. The tooltip stays while the agent's drawer is open. A subagent reads
+  as its role (`explorer`, `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
   with a question for you, or a plan waits for approval), working agents further out, finished
   ones at the edge. An agent keeps its own direction from you for
@@ -39,10 +44,12 @@ Click an agent (its neuron, its tooltip or its chip in the top bar) to toggle it
 drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
 drawer leaves visible, however far they are from you.
 
-The top of the drawer stays put: the session name, your latest prompt, its state, its model with
-the session's token consumption (its subagents included), and the actions below. Each subagent
+The top of the drawer stays put: the session name (on one line, cut short with "…" when it is long),
+your latest prompt, its state, its model, the session's **Total used** tokens (its subagents
+included), and the actions below. Each subagent
 in **Subagents** shows the tokens its transcript reports so far, marked `≥`: the host does not
-record every model call of a subagent in the transcript, so only the agent's total is exact. **Subagents** and **Activity** fold
+record every model call of a subagent in the transcript, so only the agent's total is exact.
+**Activity** names each tool with its target (a file, a command, a pattern or a host). **Subagents** and **Activity** fold
 open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
 drawer from a subagent unfolds Subagents on it. The drawer offers:
 
