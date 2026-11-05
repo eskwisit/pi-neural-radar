@@ -58,6 +58,8 @@
   .panel .body .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .panel .body .log { max-height: none; }
   .panel h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel h2 .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel h2 > :not(.name) { flex: none; }
   .panel .close { position: absolute; top: 12px; right: 12px; z-index: 1; }
   .meta .tok { opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
   .status { display: inline-block; font-size: 11px; margin-top: 6px; letter-spacing: .04em; }
@@ -1105,7 +1107,7 @@ function renderPanel() {
     <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
     <div class="top">
     <div class="head">
-    <h2><span class="dot" style="color:${col}"></span>${esc(nameOf(a, 40))}${a === solo ? `<span style="color:var(--muted);font-weight:400">${esc(t('youTag'))}</span>` : ''}</h2>
+    <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span>${a === solo ? `<span style="color:var(--muted);font-weight:400">${esc(t('youTag'))}</span>` : ''}</h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
     <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}${tok ? `<span class="tok">${a.model ? ' · ' : ''}${esc(tok)}</span>` : ''}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
