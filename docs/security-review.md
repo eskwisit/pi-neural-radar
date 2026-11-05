@@ -34,11 +34,10 @@ below). The review still has to treat it as High: the tier is about capability, 
 |---|---|---|---|
 | `ui.view` | The radar view docked in the work panel, which opens automatically according to the `autoOpen` setting or from the command | `pi.ui.revealView({ viewId: "radar" })` | `maybeReveal()` (automatic, after the first poll only, with a 30 s cooldown on "started working"), and the `neural-radar.open` command registered in `onLoad()` |
 | `desktop.control` | **Read:** session list, agent status, transcripts, subagents (read from the transcript), pending plans | `pi.desktop.invoke` with `session/list`, `agent/getStatus`, `session/get` (`messageLimit: 60`), `plans/pending` | `poll()` |
-| | **Act, only on a click in the drawer:** | `session/open` | `act()` with action `open` or `prefill` |
+| | **Act, only on a click in the drawer:** | `session/open` | `act()` with action `open` |
 | | | `agent/prompt` | `act()` with action `send` |
 | | | `agent/stop`, `agent/abort` | `act()` with action `stop` or `abort` (two-step confirmation in the view) |
 | | | `plans/resolve` **sent with `confirm: true`** | `act()` with action `plan` (Approve or Reject) |
-| `composer.suggest` | "Pre-fill in session": offers the text you typed in the drawer to the session's composer. The text is not sent | `pi.composer.suggest({ sessionId, text })` | `act()` with action `prefill` |
 
 Host APIs called without a permission of their own (base plugin API, as far as the author knows; a
 reviewer should confirm this against host policy):
@@ -54,15 +53,11 @@ The view (`views/index.html`) also calls the host bridge directly: `window.plugi
 with `radar.state` and `radar.action` (answered by `onPanelInvoke()`), `app.getAppearance`, and
 `pluginBridge.on("appearance:changed")`. The last two only read the UI locale.
 
-### `composer.suggest` (not in the audit's known-permission list)
+### No `composer.suggest`
 
-`scripts/security_audit.py` reports `unknown permission requires host-policy review:
-composer.suggest`. PI-Desktop does provide the permission (`pi.composer.suggest`). It is used in
-exactly one place: `act()` with action `prefill`, which runs only when the user clicks
-**Pre-fill in session** in the drawer, and only with the text the user typed into the drawer's text
-box (trimmed; nothing is sent when it is empty). It switches to the session (`session/open`) and
-places the text in that session's composer as a suggestion. The user still has to send it. The
-plugin never builds or changes that text, and never calls `composer.suggest` on its own.
+The plugin does not declare `composer.suggest`. The "Pre-fill in session" button and the `prefill`
+action were removed so that the manifest uses only permissions the audit knows. `act()` answers
+`prefill` with `unknown action`; `tests/actions.test.js` checks that it calls nothing.
 
 ## Capability / data-flow matrix
 
@@ -76,7 +71,6 @@ plugin never builds or changes that text, and never calls `composer.suggest` on 
 | Open the view automatically | `maybeReveal()` | the setting `autoOpen` | `pi.ui.revealView` | `ui.view` | Setting **Open the radar automatically** (`off` disables it) | never on the first poll; 30 s cooldown for "started working" (`REOPEN_COOLDOWN_MS`) | none needed |
 | Open a session | drawer **Open session** → `act({ action: "open" })` | sessionId | `session/open` | `desktop.control` | one click | one call | none |
 | Send a message to the agent | drawer **Send to agent** or Ctrl/⌘+Enter → `act({ action: "send" })` | the text the user typed | `agent/prompt` `{ sessionId, content }` | `desktop.control` | one click; empty text is refused | one call | none |
-| Pre-fill in session | drawer **Pre-fill in session** → `act({ action: "prefill" })` | the text the user typed | `session/open`, then `pi.composer.suggest` | `desktop.control`, `composer.suggest` | one click; the user still sends it from the composer | one call each | none |
 | Approve or reject a plan | drawer **Approve** / **Reject** → `act({ action: "plan" })` | the proposal ids shown in the drawer | `plans/resolve` with **`confirm: true`** | `desktop.control` | one click on a visible, specific plan. Refused when `proposalId`, `turnId` or `toolCallId` is missing | one call. Approve uses the session's own permission mode when it is `ask`, `accept-edits` or `auto`, and `ask` otherwise; Reject sends no mode | none |
 | Stop a turn | drawer **Stop**, then **Confirm stop** → `act({ action: "stop" })` | sessionId | `agent/stop` | `desktop.control` | **two clicks within 3 s**; disabled while the agent is finished or waiting for your reply | one call; the whole agent (no per-subagent stop) | none |
 | Abort a turn | drawer **Abort**, then **Confirm abort** → `act({ action: "abort" })` | sessionId | `agent/abort` | `desktop.control` | **two clicks within 3 s**; disabled as for Stop | one call | none |
@@ -120,7 +114,7 @@ here as well.
   sends it with `confirm: true`. The user's click on **Approve** or **Reject** for the specific plan
   shown in the drawer is the confirmation. Approving never escalates: it keeps the session's own
   permission mode and falls back to `ask` for any unknown mode.
-- Send, Pre-fill and Open session are single, visible clicks. They act only on the session whose
+- Send and Open session are single, visible clicks. They act only on the session whose
   drawer is open.
 
 ## Negative paths (tests)
@@ -146,7 +140,7 @@ here as well.
 
 | # | Finding | Severity | Status |
 |---|---|---|---|
-| 1 | `act("prefill")` ignored a failed `composer.suggest` (`.catch(() => null)`) and returned `ok: true`, so a denied permission still showed "Suggested in the session composer" | Low (misleading feedback, no safety impact) | Fixed in 0.6.0: the failure is returned as `{ ok: false, message }` and the view shows it; covered by `tests/actions.test.js` |
+| 1 | `act("prefill")` ignored a failed `composer.suggest` (`.catch(() => null)`) and returned `ok: true`, so a denied permission still showed "Suggested in the session composer" | Low (misleading feedback, no safety impact) | Fixed in 0.6.0; the `prefill` action was removed later with `composer.suggest` |
 | 2 | The view calls `pluginBridge.invoke("app.getAppearance")`. If the host does not handle `app.*` channels itself, the call reaches `onPanelInvoke`, which answers `{ ok: false, message: "unknown channel: …" }`; the view then falls back to `navigator.language` | Info | Needs confirmation of the host bridge behaviour |
 | 3 | Some transcript strings are not length-capped in `main.js`: the asktool question and options, plan title and question, subagent description, tool names. They are bounded only by `messageLimit: 60`, and the view escapes them | Info | Accepted |
 | 4 | The in-memory `memory` map (per-session poll state) is never pruned. It grows by one small entry per session the radar has watched during the PI-Desktop run and is dropped when the plugin unloads | Info | Accepted |
@@ -186,14 +180,14 @@ Node 20, `node --test tests/` finds the `*.test.js` files itself.
 ```console
 $ python3 scripts/security_audit.py plugins/eskwisit.neural-radar
 # (catalog repository scripts; run on a scratch copy holding manifest.json, main.js, views/, README.md, LICENSE)
-Security audit: 1 plugin source(s), 0 blocker(s), 3 manual-review signal(s)
-REVIEW: eskwisit.neural-radar/manifest.json: unknown permission requires host-policy review: composer.suggest
+# expected after removing composer.suggest (not re-run here)
+Security audit: 1 plugin source(s), 0 blocker(s), 2 manual-review signal(s)
 REVIEW: eskwisit.neural-radar/main.js:10: manual review signal: agent/prompt or desktop control
 REVIEW: eskwisit.neural-radar/views/index.html:895: manual review signal: persistent activation/timer
 Security audit passed automatic checks; maintainer review is still required.
 ```
 
-All three signals are explained above: `composer.suggest`, the permissions matrix, and the timers.
+Both signals are explained above: the permissions matrix and the timers.
 
 ```console
 $ grep -nE "require\(|process\.|child_process|fetch\(|XMLHttpRequest|WebSocket|eval|Function\(|import\(|localStorage|indexedDB|navigator\.clipboard" main.js views/index.html
