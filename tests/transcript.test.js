@@ -291,3 +291,52 @@ describe("activityLog (structure only; its wording is localized)", { skip: typeo
     assert.ok(Array.isArray(t.activityLog([null, {}, { role: "tool", toolName: "Bash" }])));
   });
 });
+
+describe("describeTask (what the agent works on now)", { skip: typeof t.describeTask !== "function" && "describeTask not present" }, () => {
+  it("follows the latest prompt that names a topic", () => {
+    const m = [user("Refactor the auth module"), assistant("done"), user("Now fix the tooltip layout")];
+    assert.equal(t.describeTask(m, "Session"), "Now fix the tooltip layout");
+  });
+  it("skips go-aheads and falls back to the last topical prompt", () => {
+    const m = [user("Fix the tooltip layout"), assistant("plan"), user("Sounds great. build it"), assistant("ok"), user("yes")];
+    assert.equal(t.describeTask(m, "Session"), "Fix the tooltip layout");
+  });
+  it("uses the title when no prompt names a topic, and clips long lines", () => {
+    assert.equal(t.describeTask([user("ok")], "My session"), "My session");
+    assert.equal(t.describeTask([user("x ".repeat(60))], "S").length, 48);
+  });
+});
+
+describe("toolTarget", { skip: typeof t.toolTarget !== "function" && "toolTarget not present" }, () => {
+  it("names a file, a command, a pattern or a host", () => {
+    assert.equal(t.toolTarget({ path: "src/views/index.html" }), "index.html");
+    assert.equal(t.toolTarget({ command: "cd neural-radar && node --test tests/" }), "node --test");
+    assert.equal(t.toolTarget({ pattern: "tooltip" }), "tooltip");
+    assert.equal(t.toolTarget({ url: "https://example.com/a" }), "example.com");
+    assert.equal(t.toolTarget('{"file_path":"/a/b.ts"}'), "b.ts");
+    assert.equal(t.toolTarget(null), "");
+  });
+  it("is attached to tool entries in the activity log", () => {
+    const log = t.activityLog([{ role: "tool", toolName: "Edit", toolArgs: { path: "/x/main.js" }, createdAt: 1 }]);
+    assert.equal(log[0].target, "main.js");
+  });
+});
+
+describe("toolTokens (estimated tool context)", { skip: typeof t.toolTokens !== "function" && "toolTokens not present" }, () => {
+  const call = (id, args, result, extra = {}) => ({ role: "tool", toolName: "Read", toolCallId: id, toolArgs: args, toolResult: result, createdAt: 1, ...extra });
+  it("estimates arguments plus result content, about 4 characters per token", () => {
+    const seen = new Map();
+    const n = t.toolTokens([call("a", { path: "x" }, { content: [{ type: "text", text: "y".repeat(400) }], details: { big: "z".repeat(4000) } })], seen);
+    assert.ok(n >= 100 && n < 120, String(n)); // details are UI-only and not counted
+  });
+  it("keeps counting calls that scrolled out of the window, without double counting", () => {
+    const seen = new Map();
+    t.toolTokens([call("a", {}, "x".repeat(400))], seen);
+    const n = t.toolTokens([call("a", {}, "x".repeat(400)), call("b", {}, "x".repeat(400))], seen);
+    assert.equal(t.toolTokens([call("b", {}, "x".repeat(400))], seen), n);
+  });
+  it("skips subagents' tool calls and counts CJK per character", () => {
+    assert.equal(t.toolTokens([call("s", {}, "x".repeat(400), { parentToolCallId: "task1" })], new Map()), 0);
+    assert.equal(t.estimateTokens("你好世界"), 4);
+  });
+});
