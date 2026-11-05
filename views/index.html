@@ -186,6 +186,7 @@ const COPY = {
     tokensMany: '{n} tokens',
     tokensAtLeast: '≥ {tokens}',
     tokensAtLeastHint: 'Tokens recorded in the transcript so far; the agent total above is exact once its turn ends',
+    toolCtxShort: '{n} tool ctx',
     nothingYet: 'Nothing yet',
     close: 'Close',
     log_you: 'You: {text}',
@@ -193,6 +194,8 @@ const COPY = {
     log_ask: 'Asked you a question',
     log_tool: 'Used {tool}',
     log_toolRunning: 'Used {tool} …',
+    ago: '{d} ago',
+    dur_s: '{n}s', dur_m: '{n}m', dur_h: '{n}h', dur_d: '{n}d',
     emptyConnecting: 'Waiting for the Neural Radar plugin…',
     emptyError: 'PI-Desktop did not answer: {error}',
     emptyNone: 'No agents running. The radar fills in as soon as an agent starts working.',
@@ -262,6 +265,7 @@ const COPY = {
     tokensMany: '{n} 个 token',
     tokensAtLeast: '≥ {tokens}',
     tokensAtLeastHint: '对话记录中目前记录的 token；上方智能体的总数在其回合结束后是准确的',
+    toolCtxShort: '工具上下文 {n}',
     nothingYet: '暂无记录',
     close: '关闭',
     log_you: '你：{text}',
@@ -269,6 +273,8 @@ const COPY = {
     log_ask: '向你提了一个问题',
     log_tool: '使用了 {tool}',
     log_toolRunning: '正在使用 {tool}…',
+    ago: '{d}前',
+    dur_s: '{n}秒', dur_m: '{n}分钟', dur_h: '{n}小时', dur_d: '{n}天',
     emptyConnecting: '正在等待神经雷达插件…',
     emptyError: 'PI-Desktop 没有响应：{error}',
     emptyNone: '没有正在运行的智能体。智能体一开始工作，雷达就会显示出来。',
@@ -297,6 +303,37 @@ const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s |
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
 const descOf = a => a.desc || a.title || t('untitledSession');
 const taskOf = a => a.task || a.title || t('untitledSession');
+const compactNum = n => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+// how long since the agent last did something: 12s, 4m, 2h, 3d
+function ageOf(a) {
+  let at = a.log?.[0]?.t || 0;
+  if (!at) return '';
+  if (at < 1e12) at *= 1000; // seconds, not milliseconds
+  const s = Math.max(0, (Date.now() - at) / 1000);
+  const [n, u] = s < 60 ? [s, 's'] : s < 3600 ? [s / 60, 'm'] : s < 86400 ? [s / 3600, 'h'] : [s / 86400, 'd'];
+  return t('ago', { d: t('dur_' + u, { n: Math.floor(n) }) });
+}
+// the tooltip's second line: [state (in its colour), ' · fact · tool context · age' (muted)], kept to about 48 characters
+function tipLine(a) {
+  const stat = a.reply ? t('needsReply') : statusLabel(a.status);
+  let fact = '';
+  const q = a.question, p = a.plan, running = a.subs.filter(s => s.status === 'run');
+  if (q?.q) fact = `“${q.q}”`;
+  else if (a.reply) fact = `“${a.reply}”`;
+  else if (p) fact = p.title || t(p.kind === 'goal' ? 'goalReady' : 'planReady');
+  else if (a.status === 'run' && running.length === 1) fact = `${running[0].role || t('subagent')}: ${running[0].description || ''}`.replace(/: $/, '');
+  else if (a.status === 'run' && running.length > 1) fact = plural(running.length, 'subagentsOne', 'subagentsMany');
+  else if (a.status === 'run') { const l = a.log?.find(x => x.kind === 'tool'); if (l) fact = [l.tool, l.target].filter(Boolean).join(' '); }
+  // what the agent's own tool calls put into its context, in every state
+  const ctxTok = a.toolTokens > 0 ? t('toolCtxShort', { n: compactNum(a.toolTokens) }) : '';
+  const age = ageOf(a);
+  // when space runs short the age goes first, so the fact stays readable
+  const roomFor = extra => 48 - stat.length - extra.reduce((w, x) => w + (x ? x.length + 3 : 0), 0) - 3;
+  const keepAge = !fact || roomFor([ctxTok, age]) >= Math.min(18, fact.length);
+  const extra = keepAge ? [ctxTok, age] : [ctxTok];
+  const tail = [fact && clip(fact, Math.max(12, roomFor(extra))), ...extra].filter(Boolean);
+  return [stat, tail.length ? ' · ' + tail.join(' · ') : ''];
+}
 function logLine(l) {
   switch (l.kind) {
     case 'you': return t('log_you', { text: l.text || '' });
@@ -496,7 +533,7 @@ function sync(model) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id); agents.push(a); }
-    Object.assign(a, { role: m.role, desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, tokens: m.tokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
+    Object.assign(a, { role: m.role, desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, tokens: m.tokens || 0, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
     a.target = attentionFor(m.status);
     const subSeen = new Set();
     for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
@@ -913,17 +950,16 @@ function draw(time) {
   for (const a of agents) {
     const hovered = hover?.a === a && !hover.s;
     if (a === solo || !(hovered || selected === a.id)) { a.label = null; continue; }
-    // line 1: the session name; line 2: its subagents and its state
-    const desc = nameOf(a, 48);
-    const ns = a.subs.length;
-    const stat = `${ns ? plural(ns, 'subagentsOne', 'subagentsMany') + ' · ' : ''}${a.reply ? t('needsReply') : statusLabel(a.status)}`;
+    // line 1: what it works on now; line 2: its state, then one concrete fact, then how long ago
+    const desc = clip(descOf(a), 36);
+    const [stat, detail] = tipLine(a);
     ctx.font = '600 11.5px ui-sans-serif, system-ui'; const wd = ctx.measureText(desc).width;
-    ctx.font = '10.5px ui-sans-serif, system-ui'; const ws = ctx.measureText(stat).width;
+    ctx.font = '10.5px ui-sans-serif, system-ui'; const ws = ctx.measureText(stat + detail).width;
     const pw = Math.max(wd, ws) + 20, ph = 38;
     const right = a.x >= you.x ? a.x + 46 * K + pw < availW : a.x - 46 * K - pw < 0;
     const px = right ? a.x + 46 * K - 10 : a.x - 46 * K - pw + 10, py = a.y - 16;
     a.label = { x: px, y: py, w: pw, h: ph };
-    agentLabels.push({ a, stat, desc, px, py, pw, ph });
+    agentLabels.push({ a, stat, detail, desc, px, py, pw, ph });
   }
 
   // 1) subagents (bottom): role and what they were asked to do; finished ones first, so the
@@ -950,7 +986,7 @@ function draw(time) {
 
   // 2) agents (middle): node and tooltip are painted over any subagent label beneath
   for (const a of agents) if (a !== solo) redrawCluster(a);
-  for (const { a, stat, desc, px, py, pw, ph } of agentLabels) {
+  for (const { a, stat, detail, desc, px, py, pw, ph } of agentLabels) {
     const open = selected === a.id;
     pill(px, py, pw, ph, 1, open ? 'rgba(255,255,255,0.45)' : (a.status === 'need' || a.status === 'approve') ? ST[a.status] + '66' : null);
     ctx.textAlign = 'left';
@@ -958,6 +994,7 @@ function draw(time) {
     ctx.fillText(desc, px + 10, a.y - 1);
     ctx.font = '10.5px ui-sans-serif, system-ui'; ctx.fillStyle = ST[a.status];
     ctx.fillText(stat, px + 10, a.y + 13);
+    if (detail) { ctx.fillStyle = 'rgba(220,220,230,0.72)'; ctx.fillText(detail, px + 10 + ctx.measureText(stat).width, a.y + 13); }
   }
 
   // 3) You / main (top)
