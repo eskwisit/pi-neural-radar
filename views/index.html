@@ -302,7 +302,7 @@ function logLine(l) {
     case 'you': return t('log_you', { text: l.text || '' });
     case 'launch': return t('log_launch', { agent: l.agent || t('subagent'), text: l.text || '' });
     case 'ask': return t('log_ask');
-    case 'tool': return t(l.running ? 'log_toolRunning' : 'log_tool', { tool: l.tool || '' });
+    case 'tool': return t(l.running ? 'log_toolRunning' : 'log_tool', { tool: [l.tool, l.target].filter(Boolean).join(' ') });
     default: return String(l.text || '');
   }
 }
