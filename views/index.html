@@ -25,11 +25,6 @@
     background: var(--panel); border: 1px solid var(--line); cursor: pointer; color: var(--text); font: inherit; font-size: 12px; }
   .chip:hover { border-color: rgba(255,255,255,.22); }
   .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: currentColor; }
-  .controls { display: flex; gap: 6px; pointer-events: auto; }
-  .layouts { display: flex; gap: 4px; pointer-events: auto; }
-  .layouts button { font: inherit; font-size: 11.5px; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
-  .layouts button.on { color: var(--text); border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.06); }
-  body.embed .queue, body.embed .controls, body.embed .layouts { display: none; }
   .btn { font: inherit; font-size: 12px; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--line);
     padding: 5px 10px; border-radius: 7px; cursor: pointer; }
   .btn:hover { background: rgba(255,255,255,.09); }
@@ -37,7 +32,6 @@
   .btn.primary { background: #f2f2f5; color: #0b0b0e; border-color: transparent; font-weight: 600; }
   .btn.danger { color: #ff9ab5; }
   .btn.ghost { background: transparent; border-color: transparent; }
-
 
   /* the drawer: everything above Subagents stays put; Subagents and Activity fold, and an open
      one scrolls inside itself, so the drawer never scrolls. Only when the fixed part cannot fit
@@ -64,14 +58,11 @@
   .meta .tok { opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
   .meta.tok { display: block; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status { display: inline-block; font-size: 11px; margin-top: 6px; letter-spacing: .04em; }
-  .meter { margin: 14px 0 4px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
-  .meter > i { display: block; height: 100%; background: linear-gradient(90deg, #34d399, #2aa7a0, #4f6bed, #a855f7); transition: width .5s; }
   .meta { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
   .section { margin-top: 18px; }
   .section h4 { margin: 0 0 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 500; }
   .ask { border: 1px solid var(--line); background: rgba(255,255,255,.03); border-radius: 10px; padding: 12px; }
   .ask p { margin: 0 0 10px; }
-  .opts { display: flex; flex-wrap: wrap; gap: 6px; }
   textarea { width: 100%; resize: vertical; min-height: 54px; font: inherit; color: var(--text);
     background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; outline: none; }
   textarea:focus { border-color: rgba(255,255,255,.25); }
@@ -83,7 +74,6 @@
   .sub .n { flex: 1; }
   .sub .n small { display: block; color: var(--muted); }
   .sub.hl { background: rgba(255,255,255,.04); border-radius: 6px; padding-left: 6px; }
-  .mini { font-size: 11px; padding: 3px 8px; }
   .log { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: #a3a3ad;
     max-height: 220px; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; overscroll-behavior: contain; padding-right: 4px; }
   .log div { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
@@ -109,7 +99,6 @@
   @media (max-width: 760px) {
     .topbar { left: 12px; right: 12px; top: 10px; flex-wrap: wrap; }
     .queue { margin-left: 0; order: 3; width: 100%; overflow-x: auto; }
-    .controls { margin-left: auto; }
     .panel { left: 0; width: auto; top: 30%; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; transform: translateY(100%); }
   }
 </style>
@@ -353,16 +342,12 @@ const HANDOFF = '#8fb8ff'; // agent hands a task to a subagent
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const bg = document.createElement('canvas');
-const bgx = bg.getContext('2d');
 let W = 0, H = 0, DPR = 1, K = 1;
 
 // ---------- helpers ----------
 const now = () => performance.now() / 1000;
-const fmt = () => new Date().toTimeString().slice(0, 8);
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-function gauss() { return (Math.random() + Math.random() + Math.random() - 1.5) / 1.5; }
 function rgb(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
 const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
@@ -377,21 +362,12 @@ function grad(u) {
   return STOPS[STOPS.length - 1][1];
 }
 
-// ---------- layouts: same network, six ways to place you and the agents ----------
-// 1 Radar:   you at the centre; urgent, waiting and working agents on separate rings around you
-// 2 Flow:    you on the left; columns to the right: urgent, waiting, working, done
-// 3 Cascade: you at the top; rows below you, from urgent down to done
-// 4 Horizon: you at the bottom centre; agents on arcs above you, like a half radar
-// 5 Corner:  you in the lower-left corner; quarter arcs spread toward the upper right
-// 6 Band:    you at the lower left; agents along a diagonal band, drifting away as they need you less
-const params = new URLSearchParams(location.search);
-const LAYOUT = 1;
-const EMBED = false;
+// ---------- layout: you at the centre; urgent, waiting and working agents on separate rings around you ----------
 const box = { x: 0, y: 0, w: 0, h: 0 }, boxT = { x: 0, y: 0, w: 0, h: 0 }, boxBase = { x: 0, y: 0, w: 0, h: 0 };
 // the area you and the agents live in: leaves room for the top bar, labels and side panel
 function computeView() {
   const mobile = W < 760, availW = selected && W > 900 ? W - 400 : W;
-  const top = mobile ? 70 : 64, bottom = (mobile ? 64 : 70) + (LAYOUT === 4 || LAYOUT === 5 ? 50 : 0);
+  const top = mobile ? 70 : 64, bottom = mobile ? 64 : 70;
   const side = mobile ? 44 : Math.max(130, availW * 0.09);
   boxBase.x = side; boxBase.y = top; boxBase.w = Math.max(160, availW - side * 2); boxBase.h = Math.max(160, H - top - bottom);
   Object.assign(boxT, boxBase);
@@ -406,36 +382,16 @@ function viewCentre() {
 // status tiers, each at its own distance from you so they never blur together
 function tierOf(a) { return { need: 0, approve: 1, run: 2, paused: 2, done: 3, stopped: 3 }[a.status] ?? 2; }
 const TIER_R = [0.44, 0.66, 0.87, 1.02];
-function youAnchor() {
-  const b = box;
-  if (LAYOUT === 2) return [b.x, b.y + b.h / 2];
-  if (LAYOUT === 3) return [b.x + b.w / 2, b.y];
-  if (LAYOUT === 4) return [b.x + b.w / 2, b.y + b.h];
-  if (LAYOUT === 5) return [b.x, b.y + b.h];
-  if (LAYOUT === 6) return [b.x, b.y + b.h * 0.85];
-  return [b.x + b.w / 2, b.y + b.h / 2];
-}
+const youAnchor = () => [box.x + box.w / 2, box.y + box.h / 2];
 // each agent keeps its own lane; when its status changes it only moves closer to you or further away
 // the fan of subagents behind an agent widens with their number, so up to 6 stay readable
 function fanArc(n) { return n > 3 ? Math.min(1.5 + (n - 3) * 0.5, 3.0) : 1.5; }
 function fanR(n) { return 70 + Math.max(0, n - 3) * 16; }
 function placeAgent(a) {
-  const b = box, [yx, yy] = youAnchor(), tier = tierOf(a);
-  const r = TIER_R[tier] + ((1 - a.attention) - 0.5) * 0.06;   // a small nudge inside its tier
-  const f = a.lane;
-  const polar = (R, th) => [yx + Math.cos(th) * r * R, yy + Math.sin(th) * r * R];
-  switch (LAYOUT) {
-    case 2: return [b.x + r * b.w, b.y + (0.08 + f * 0.84) * b.h];
-    case 3: return [b.x + (0.06 + f * 0.88) * b.w, b.y + r * b.h];
-    case 4: return polar(Math.min(b.w / 2, b.h), Math.PI + (0.08 + f * 0.84) * Math.PI);
-    case 5: return polar(Math.min(b.w, b.h), -Math.PI / 2 + (0.06 + f * 0.88) * Math.PI / 2);
-    case 6: {
-      const ex = b.x + b.w, ey = b.y + b.h * 0.12, L = Math.hypot(ex - yx, ey - yy);
-      const ux = (ex - yx) / L, uy = (ey - yy) / L, w = Math.min(b.h, b.w) * 0.62;
-      return [yx + ux * r * L - uy * (f - 0.5) * w, yy + uy * r * L + ux * (f - 0.5) * w];
-    }
-    default: return polar(Math.min(b.w, b.h) / 2, -Math.PI / 2 + f * Math.PI * 2);
-  }
+  const [yx, yy] = youAnchor(), R = Math.min(box.w, box.h) / 2;
+  const r = (TIER_R[tierOf(a)] + ((1 - a.attention) - 0.5) * 0.06) * R;   // a small nudge inside its tier
+  const th = -Math.PI / 2 + a.lane * Math.PI * 2;
+  return [yx + Math.cos(th) * r, yy + Math.sin(th) * r];
 }
 function farDist() {
   const b = box; let m = 1;
@@ -446,20 +402,12 @@ function farDist() {
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = innerWidth; H = innerHeight;
-  for (const c of [canvas, bg]) { c.width = W * DPR; c.height = H * DPR; }
+  canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); bgx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   K = clamp(Math.min(W * 0.75, H) / 800, 0.7, 1.25);
   computeView();
   if (!box.w) Object.assign(box, boxT);
-  // flat dark background with the reference's soft purple / green wash
-  bgx.fillStyle = '#050507'; bgx.fillRect(0, 0, W, H);
-  const p = bgx.createRadialGradient(W * 0.08, H * 0.72, 0, W * 0.08, H * 0.72, W * 0.42);
-  p.addColorStop(0, 'rgba(124,58,237,0.16)'); p.addColorStop(1, 'rgba(124,58,237,0)');
-  bgx.fillStyle = p; bgx.fillRect(0, 0, W, H);
-  const g = bgx.createRadialGradient(W * 0.82, H * 0.3, 0, W * 0.82, H * 0.3, W * 0.4);
-  g.addColorStop(0, 'rgba(16,185,129,0.12)'); g.addColorStop(1, 'rgba(16,185,129,0)');
-  bgx.fillStyle = g; bgx.fillRect(0, 0, W, H);
 }
 
 // ---------- the network ----------
@@ -515,7 +463,7 @@ function pickLane() {
   return best;
 }
 function mkAgent(id) {
-  const a = { id, role: 'agent', desc: '', title: '', task: '', status: 'run', attention: 0.2, target: 0.2, subs: [], log: [], x: NaN, y: NaN,
+  const a = { id, desc: '', title: '', task: '', status: 'run', attention: 0.2, target: 0.2, subs: [], log: [], x: NaN, y: NaN,
     seed: Math.random() * 10, flash: 0, model: '', question: null, plan: null, active: false, lane: pickLane() };
   a.pts = clusterPts(a, 15, 34, 6, 1.5); a.hub = a.pts[0];
   return a;
@@ -527,7 +475,6 @@ let draft = '', connected = null, panelSig = '', lastError = null;
 let logOpen = false; // the Activity section starts folded for each agent you open
 let subsOpen = false; // so does Subagents, unless you open the drawer from one of its subagents
 let revealSub = false; // scroll the picked subagent into view on the next render
-const simPaused = false, speed = 1;
 function attentionFor(s) { return { need: 0.93, approve: 0.75, run: 0.2, paused: 0.35, stopped: 0.03, done: 0.04 }[s] ?? 0.2; }
 
 function sync(model) {
@@ -536,14 +483,14 @@ function sync(model) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id); agents.push(a); }
-    Object.assign(a, { role: m.role, desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, tokens: m.tokens || 0, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
+    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, tokens: m.tokens || 0, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
     a.target = attentionFor(m.status);
     const subSeen = new Set();
     for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
       subSeen.add(ms.id);
       let s = a.subs.find(x => x.id === ms.id);
       if (!s) { s = mkSub(ms.id, ms.role); a.subs.push(s); }
-      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, model: ms.model, toolCalls: ms.toolCalls, lastTool: ms.lastTool, tokens: ms.tokens || 0 });
+      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, toolCalls: ms.toolCalls, lastTool: ms.lastTool, tokens: ms.tokens || 0 });
     }
     a.subs = a.subs.filter(s => subSeen.has(s.id));
   }
@@ -625,7 +572,6 @@ function buildGraph() {
     near.sort((x, y) => x[0] - y[0]);
     for (const [d2, q] of near) { if (p.deg >= MIN_DEG) break; add(p, q, Math.sqrt(d2) / (thr * (p.sc || 1))); }
   }
-  // a subagent is always wired to its agent
   // a subagent is always wired to its agent (to you, when that agent is you)
   for (const a of agents) for (const s of a.subs) add(s.hub, a === solo ? you.hub : a.hub, 0.5);
   // one connected network: join every separate patch along the shortest available link
@@ -679,18 +625,6 @@ const spikes = [];
 function spike(src, dst, color, v, onArrive) {
   const path = shortestPath(src, dst);
   if (path && path.length > 1) spikes.push({ path, s: 0, v, color: rgb(color), onArrive });
-}
-function spontaneous() {
-  let p = filler[Math.floor(Math.random() * filler.length)];
-  if (p.hidden) return;
-  const path = [p];
-  for (let k = 0; k < 5; k++) {
-    const nb = adj[p.i]; if (!nb || !nb.length) break;
-    p = nodes[nb[Math.floor(Math.random() * nb.length)]];
-    if (path.includes(p)) break;
-    path.push(p);
-  }
-  if (path.length > 2) spikes.push({ path, s: 0, v: 140, color: [255, 255, 255], faint: true });
 }
 
 // ---------- update ----------
@@ -802,29 +736,27 @@ function update(dt, t) {
   if (frameNo++ % 3 === 0 || !edges.length) buildGraph(); // the mesh changes slowly
 
   // fire
-  if (!simPaused) {
-    for (const a of agents) {
-      const asking = a.status === 'need' || a.status === 'approve';
-      const hub = a === solo ? you.hub : a.hub;
-      const rate = asking ? 1.1 * a.attention : a.status === 'run' ? 0.12 : 0;
-      if (Math.random() < rate * dt * speed) {
-        if (a === solo) you.flash = Math.max(you.flash, asking ? 1 : 0.5); // you are the agent: you light up
-        else {
-          a.flash = 1;
-          spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
-        }
+  for (const a of agents) {
+    const asking = a.status === 'need' || a.status === 'approve';
+    const hub = a === solo ? you.hub : a.hub;
+    const rate = asking ? 1.1 * a.attention : a.status === 'run' ? 0.12 : 0;
+    if (Math.random() < rate * dt) {
+      if (a === solo) you.flash = Math.max(you.flash, asking ? 1 : 0.5); // you are the agent: you light up
+      else {
+        a.flash = 1;
+        spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
       }
-      for (const s of a.subs) {
-        if (s.dispatch) { s.dispatch = false; spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
-        if (s.status !== 'run') continue;
-        if (Math.random() < 0.35 * dt * speed) spikes.push({ path: [s.hub, hub], s: 0, v: 120 * K, color: [255, 255, 255] });
-        else if (Math.random() < 0.08 * dt * speed) spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) });
-      }
+    }
+    for (const s of a.subs) {
+      if (s.dispatch) { s.dispatch = false; spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
+      if (s.status !== 'run') continue;
+      if (Math.random() < 0.35 * dt) spikes.push({ path: [s.hub, hub], s: 0, v: 120 * K, color: [255, 255, 255] });
+      else if (Math.random() < 0.08 * dt) spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) });
     }
   }
   for (let i = spikes.length - 1; i >= 0; i--) {
     const sp = spikes[i];
-    sp.s += sp.v * dt * (simPaused ? 0 : 1);
+    sp.s += sp.v * dt;
     if (sp.s >= pathLen(sp.path) + 60) { sp.onArrive?.(); spikes.splice(i, 1); }
   }
 }
@@ -879,7 +811,7 @@ function draw(time) {
   for (const sp of spikes) {
     const trail = 70 * K, head = sp.s;
     let c = 0;
-    const [r, g, b] = sp.color, base = sp.faint ? 0.45 : 0.95;
+    const [r, g, b] = sp.color, base = 0.95;
     for (let i = 1; i < sp.path.length; i++) {
       const A = sp.path[i - 1], B = sp.path[i], L = Math.hypot(B.x - A.x, B.y - A.y) || 1;
       const s0 = Math.max(c, head - trail), s1 = Math.min(c + L, head);
@@ -889,13 +821,13 @@ function draw(time) {
         const gr = ctx.createLinearGradient(x0, y0, x1, y1);
         const a0 = base * (1 - (head - s0) / trail), a1 = base * (1 - (head - s1) / trail);
         gr.addColorStop(0, `rgba(${r},${g},${b},${Math.max(0, a0)})`); gr.addColorStop(1, `rgba(${r},${g},${b},${Math.max(0, a1)})`);
-        ctx.strokeStyle = gr; ctx.lineWidth = sp.faint ? 0.9 : 1.5;
+        ctx.strokeStyle = gr; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
       }
       if (head >= c && head <= c + L) {
         const k = (head - c) / L;
         ctx.fillStyle = `rgba(${r},${g},${b},${base})`;
-        ctx.beginPath(); ctx.arc(lerp(A.x, B.x, k), lerp(A.y, B.y, k), sp.faint ? 1.3 : 2, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(lerp(A.x, B.x, k), lerp(A.y, B.y, k), 2, 0, 7); ctx.fill();
       }
       c += L;
     }
