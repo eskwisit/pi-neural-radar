@@ -65,7 +65,7 @@ describe("poll: bounds", () => {
     });
     await t.poll();
     await t.poll();
-    const reads = new Set(["session/list", "plans/pending", "agent/getStatus", "session/get", "stats/getTokenUsageHistory"]);
+    const reads = new Set(["session/list", "plans/pending", "agent/getStatus", "session/get"]);
     for (const r of pi.invocations) assert.ok(reads.has(r.operation), r.operation);
     assert.ok(pi.invocations.every((r) => !r.confirm));
     assert.deepEqual(pi.suggestions, []);
