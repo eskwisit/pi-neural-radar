@@ -111,6 +111,45 @@ function sessionTokens(completed, messages) {
   return (completed?.total ?? 0) + live;
 }
 
+/** A rough token count: about 4 characters per token, one per CJK character. */
+function estimateTokens(text) {
+  const t = str(text);
+  if (!t) return 0;
+  const cjk = (t.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g) ?? []).length;
+  return Math.ceil(cjk + (t.length - cjk) / 4);
+}
+
+/** What a tool call puts into the model's context: its arguments and the content of its result. */
+function toolPayload(b) {
+  const args = typeof b.args === "string" ? b.args : JSON.stringify(b.args ?? {});
+  const r = b.result;
+  let out = "";
+  if (typeof r === "string") out = r;
+  else if (Array.isArray(r?.content)) out = r.content.map((c) => (typeof c === "string" ? c : str(c?.text))).join("\n");
+  else if (r != null) out = typeof r.content === "string" ? r.content : JSON.stringify(r.content ?? r.output ?? r.text ?? ""); // never the UI-only details
+  return args + out;
+}
+
+/**
+ * Tokens the agent's own tool calls put into its context (arguments + results), estimated from
+ * their size. Subagents' tool calls stay in their own context and are not counted. `seen`
+ * (call id → tokens) persists across polls, so calls that scroll out of the transcript window
+ * keep counting; the total is a lower bound for calls made before the radar started watching.
+ */
+function toolTokens(messages, seen) {
+  messages.forEach((m) => {
+    if (parentCallOf(m)) return;
+    blocksOf(m).forEach((b, k) => {
+      if (!b?.name || b.type === "text") return;
+      const id = str(b.callId) || `${ts(m?.createdAt ?? m?.created_at)}:${b.name}:${k}`;
+      seen.set(id, Math.max(seen.get(id) ?? 0, estimateTokens(toolPayload(b))));
+    });
+  });
+  let total = 0;
+  for (const v of seen.values()) total += v;
+  return total;
+}
+
 // ---------- reading sessions ----------
 function sessionsFrom(listResult) {
   const raw = arr(listResult?.sessions ?? listResult?.items ?? listResult);
@@ -551,6 +590,8 @@ async function poll() {
     // the open turn's messages can scroll out of the window too: within one turn, never go down
     const tokens = Math.max(sessionTokens(mem.usage.completed, messages), mem.usage.tokens);
     mem.usage.tokens = tokens;
+    mem.toolSeen = mem.toolSeen ?? new Map();
+    const toolTok = toolTokens(messages, mem.toolSeen);
     const awaiting = !running && !question && !plan ? awaitingReply(messages) : null;
     const asked = awaiting?.ask ?? null;
     // once you have opened the session and seen the question, leaving it means "not now":
@@ -571,6 +612,7 @@ async function poll() {
       status: statusKey,
       model: str(status.modelId) || s.model,
       tokens,
+      toolTokens: toolTok,
       active: s.id === activeSessionId,
       question,
       reply,
