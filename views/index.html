@@ -55,8 +55,6 @@
   .panel h2 .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel h2 > :not(.name) { flex: none; }
   .panel .close { position: absolute; top: 12px; right: 12px; z-index: 1; }
-  .meta .tok { opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
-  .meta.tok { display: block; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status { display: inline-block; font-size: 11px; margin-top: 6px; letter-spacing: .04em; }
   .meta { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
   .section { margin-top: 18px; }
@@ -175,9 +173,7 @@ const COPY = {
     tokensOne: '{n} token',
     tokensMany: '{n} tokens',
     tokensAtLeast: '≥ {tokens}',
-    totalTokens: 'Total used {n}',
     toolCtxShort: '{n} tool ctx',
-    totalTokensHint: 'All tokens this session has consumed so far (input, output and cache, subagents included), as PI-Desktop bills them',
     tokensAtLeastHint: 'Tokens this subagent’s messages report in the transcript so far: a lower bound, since not every model call is recorded',
     nothingYet: 'Nothing yet',
     close: 'Close',
@@ -255,9 +251,7 @@ const COPY = {
     tokensOne: '{n} 个 token',
     tokensMany: '{n} 个 token',
     tokensAtLeast: '≥ {tokens}',
-    totalTokens: '累计消耗 {n}',
     toolCtxShort: '工具上下文 {n}',
-    totalTokensHint: '此会话目前消耗的全部 token（输入、输出和缓存，含子智能体），与 PI-Desktop 的计费一致',
     tokensAtLeastHint: '此子智能体的消息在对话记录中目前报告的 token：这是下限，并非每次模型调用都有记录',
     nothingYet: '暂无记录',
     close: '关闭',
@@ -288,8 +282,8 @@ function t(key, vars) {
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }
 const plural = (n, one, many) => t(n === 1 ? one : many, { n });
-// a session's token consumption, compact in the user's language (12.3k, 1.2万, …)
-const tokensText = n => n > 0 ? t(n === 1 ? 'tokensOne' : 'tokensMany', { n: new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n) }) : '';
+// a subagent's token count, compact in the user's language (12.3k, 1.2万, …)
+const tokensText = n => n > 0 ? t(n === 1 ? 'tokensOne' : 'tokensMany', { n: compactNum(n) }) : '';
 const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s || ''));
 // an agent is named after its session, as in PI-Desktop's session list
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
@@ -483,7 +477,7 @@ function sync(model) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id); agents.push(a); }
-    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, tokens: m.tokens || 0, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
+    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
     a.target = attentionFor(m.status);
     const subSeen = new Set();
     for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
@@ -1069,8 +1063,6 @@ function renderPanel() {
   const keep = sel => panel.querySelector(sel)?.scrollTop ?? 0;
   const logScroll = keep('.log'), subsScroll = keep('.subs .scroll'), topScroll = keep('.top');
   const hasOpen = subsOpen || logOpen;
-  // the session's total consumption; the tool context is on the tooltip
-  const tok = a.tokens > 0 ? `<span title="${esc(t('totalTokensHint'))}">${esc(t('totalTokens', { n: compactNum(a.tokens) }))}</span>` : '';
   const col = ST[a.status];
   const live = a.status !== 'done';
   const q = a.question, p = a.plan;
@@ -1084,7 +1076,6 @@ function renderPanel() {
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
     <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
-    ${tok ? `<div class="meta tok" style="margin-top:2px">${tok}</div>` : ''}
     </div>
 
 
@@ -1125,7 +1116,7 @@ function renderPanel() {
     <div class="section subs ${subsOpen ? 'open' : ''}"><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
       ${subsOpen ? `<div class="scroll">${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
           <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
-          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}${s.tokens > 0 ? ` · <span class="tok" title="${esc(t('tokensAtLeastHint'))}">${esc(t('tokensAtLeast', { tokens: tokensText(s.tokens) }))}</span>` : ''}</small></div>
+          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}${s.tokens > 0 ? ` · <span title="${esc(t('tokensAtLeastHint'))}">${esc(t('tokensAtLeast', { tokens: tokensText(s.tokens) }))}</span>` : ''}</small></div>
         </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}</div>` : ''}
     </div>
     <div class="section activity ${logOpen ? 'open' : ''}"><h4 class="fold ${logOpen ? 'open' : ''}" data-act="log" role="button" tabindex="0" aria-expanded="${logOpen}"><span class="caret">▸</span>${esc(t('activityHeading', { n: (a.log || []).length }))}</h4>
