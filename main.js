@@ -65,6 +65,8 @@ const tokensOf = (u) => !u || typeof u !== "object" ? 0 :
   num(u.cacheReadTokens ?? u.cache_read_tokens) + num(u.cacheWriteTokens ?? u.cache_write_tokens);
 /** A transcript message's provider usage (one model operation), if it carries one. */
 const usageOf = (m) => m?.usage ?? m?.meta?.usage;
+/** The Task call a subagent's message belongs to ("" for the agent's own messages). */
+const parentCallOf = (m) => str(m?.parentToolCallId ?? m?.meta?.parentToolCallId);
 
 // ---------- token consumption ----------
 /** The turn rows of a stats/getTokenUsageHistory page. */
@@ -189,9 +191,18 @@ function textOf(message) {
     .trim();
 }
 
-/** Subagents of the session's latest turn, with their latest known status. */
+/**
+ * Subagents of the session's latest turn, with their latest known status and the tokens their
+ * transcript messages report (a lower bound: not every model call of a subagent is recorded).
+ */
 function delegationsFrom(messages) {
   const subs = new Map();
+  const callOf = new Map(); // delegationId → the Task call that launched it
+  const usedBy = new Map(); // Task call id → tokens its subagent's messages report
+  for (const m of messages) {
+    const call = parentCallOf(m);
+    if (call) usedBy.set(call, (usedBy.get(call) ?? 0) + tokensOf(usageOf(m)));
+  }
   const note = (d, fallback = {}) => {
     if (typeof d === "string") d = { delegationId: d };
     const id = str(d?.delegationId);
@@ -217,7 +228,10 @@ function delegationsFrom(messages) {
       const name = b?.name;
       const details = b?.result?.details;
       if (name === "Task") {
-        if (details?.delegationId) note(details, { description: b.args?.description });
+        if (details?.delegationId) {
+          note(details, { description: b.args?.description });
+          if (b.callId) callOf.set(str(details.delegationId), str(b.callId));
+        }
         else if (b.callId && !b.result && !b.completedAt) {
           // still launching: keep a provisional entry keyed by the call id
           subs.set(str(b.callId), { id: str(b.callId), role: str(b.args?.agent), description: str(b.args?.description), status: "running", model: "" });
@@ -237,6 +251,7 @@ function delegationsFrom(messages) {
     ...s,
     // only an explicit "running" counts as running; anything unknown is treated as finished
     status: s.status === "running" ? "run" : s.status === "completed" ? "done" : "stopped",
+    tokens: usedBy.get(callOf.get(s.id) ?? s.id) ?? 0,
     earlier: (seenAt.get(s.id) ?? -1) <= lastUser, // last mentioned before your latest message
   }));
 }
@@ -402,7 +417,11 @@ function activityLog(messages) {
  */
 function mergeSubs(previous, fresh, running) {
   const byId = new Map(arr(previous).map((x) => [x.id, x]));
-  for (const x of fresh) byId.set(x.id, { ...byId.get(x.id), ...x });
+  // a subagent's messages can scroll out of the transcript window: its tokens never go down
+  for (const x of fresh) {
+    const prev = byId.get(x.id);
+    byId.set(x.id, { ...prev, ...x, tokens: Math.max(prev?.tokens ?? 0, x.tokens ?? 0) });
+  }
   const freshIds = new Set(fresh.map((x) => x.id));
   const out = [];
   for (const x of byId.values()) {
