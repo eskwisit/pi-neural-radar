@@ -1,17 +1,23 @@
 # Changelog
 
-## 0.11.0
+## 0.13.0
 
 ### Features
 
-- **main:** read each session's token consumption (`7a50362`)
-- **view:** show the session's token consumption next to the model (`e286ed9`)
-- **view:** pin the drawer top and fold subagents like activity (`7036f37`)
+- **main:** count the tokens each subagent's transcript reports (`fb6de28`)
+- **view:** show each subagent's tokens as a lower bound (`128a4f4`)
 
 ### Fixes
 
-- **view:** keep an agent's tooltip while its drawer is open (`1387807`)
+- **main:** count session tokens from the usage history and the open turn (`0ecd64b`)
+
+### Documentation
+
+- **manifest:** mention the token usage history in the safety notes (`d2d44e7`)
+- list the token usage history read in the security review (`99d9d96`)
+- **readme:** describe session and subagent token counts (`965729c`)
 
 ### Tests
 
-- **tests:** cover the session token consumption (`7f7b5df`)
+- **tests:** cover session tokens from the usage history (`5efb52f`)
+- **tests:** cover per-subagent token counts (`c06fb0b`)
