@@ -201,7 +201,6 @@ const COPY = {
     dur_s: '{n}s', dur_m: '{n}m', dur_h: '{n}h', dur_d: '{n}d',
     emptyConnecting: 'Waiting for the Neural Radar plugin…',
     emptyError: 'PI-Desktop did not answer: {error}',
-    emptyNone: 'No agents running. The radar fills in as soon as an agent starts working.',
     toastFailed: 'That did not go through',
     toastSent: 'Sent to the agent',
     toastSuggested: 'Suggested in the session composer',
@@ -282,7 +281,6 @@ const COPY = {
     dur_s: '{n}秒', dur_m: '{n}分钟', dur_h: '{n}小时', dur_d: '{n}天',
     emptyConnecting: '正在等待神经雷达插件…',
     emptyError: 'PI-Desktop 没有响应：{error}',
-    emptyNone: '没有正在运行的智能体。智能体一开始工作，雷达就会显示出来。',
     toastFailed: '操作未成功',
     toastSent: '已发送给智能体',
     toastSuggested: '已填入会话输入框',
@@ -1122,7 +1120,7 @@ function renderEmpty() {
   const el = document.getElementById('emptyState');
   el.textContent = connected === false ? t('emptyConnecting')
     : lastError ? t('emptyError', { error: lastError })
-    : agents.length ? '' : t('emptyNone');
+    : '';
 }
 
 function renderQueue() {
