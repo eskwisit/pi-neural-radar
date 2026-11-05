@@ -40,7 +40,9 @@ drawer is open, the radar slides so the agent and its subagents sit in the middl
 drawer leaves visible, however far they are from you.
 
 The top of the drawer stays put: the session name, your latest prompt, its state, its model with
-the session's token consumption, and the actions below. **Subagents** and **Activity** fold
+the session's token consumption (its subagents included), and the actions below. Each subagent
+in **Subagents** shows the tokens its transcript reports so far, marked `≥`: the host does not
+record every model call of a subagent in the transcript, so only the agent's total is exact. **Subagents** and **Activity** fold
 open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
 drawer from a subagent unfolds Subagents on it. The drawer offers:
 
@@ -70,7 +72,7 @@ access and stores nothing besides its settings.
 
 It **can**:
 
-- read your recent sessions: their titles, token counts, agent status, the last 60 messages of each
+- read your recent sessions: their titles, token usage history, agent status, the last 60 messages of each
   transcript, subagents and pending Plan / Goal approvals. This is shown only in the radar view, on
   your machine
 - when you click: open a session, send the text you typed to the agent, put your text in a
