@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.24.1
+
+### Breaking changes
+
+- remove pre-fill in session and the composer.suggest permission (`beebe46`)
+
+### Fixes
+
+- **view:** show a lone agent as its own cluster, not merged into you (`be88191`)
+
+### Documentation
+
+- **readme:** remove pre-fill in session and composer.suggest (`007c1b9`)
+- **readme:** say a lone agent keeps its own cluster (`d664d3b`)
+- update the security review for the removed composer.suggest (`0565eaa`)
+
+### Tests
+
+- **tests:** replace the pre-fill tests with a check that prefill is refused (`94f7f73`)
+
 ## 0.23.0
 
 ### Features
