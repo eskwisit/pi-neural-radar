@@ -152,12 +152,34 @@ function planOf(p) {
   };
 }
 
-/** A short description of what the agent works on: the first line of your latest request. */
-function describeTask(messages, title) {
-  const line = lastUserText(messages).split("\n").map((l) => l.trim()).find(Boolean) ?? "";
-  const text = line.replace(/[*_#>`]+/g, "").replace(/\s+/g, " ").trim() || title;
-  return text.length > 48 ? text.slice(0, 47) + "…" : text;
+// words that carry no topic: a prompt made only of these ("ok", "sounds great, build it") is a go-ahead
+const FILLER = new Set(("yes yep yeah y no nope ok okay k sure go ahead on do it this that please pls and then now " +
+  "lets let's continue proceed thanks thank you thx great perfect nice cool good fine lgtm sounds looks " +
+  "build ship approve approved agreed done next again retry try works right exactly 好 好的 是 是的 继续 可以 行 对 谢谢").split(" "));
+const cleanLine = (text) => (str(text).split("\n").map((l) => l.trim()).find(Boolean) ?? "")
+  .replace(/[*_#>`]+/g, "").replace(/\s+/g, " ").trim();
+function isTopical(line) {
+  const words = line.toLowerCase().replace(/[^\p{L}\p{N}'\s]+/gu, " ").split(/\s+/).filter(Boolean);
+  if (/[\u3400-\u9fff]/.test(line)) return line.replace(/[\s\p{P}]/gu, "").length >= 4 && !words.every((w) => FILLER.has(w));
+  return words.length >= 3 && !words.every((w) => FILLER.has(w));
 }
+
+/**
+ * What the agent works on now: the first line of your latest request that names a topic, so it
+ * follows the session as it digresses but skips go-aheads like "ok" or "build it".
+ */
+function describeTask(messages, title) {
+  let latest = "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role !== "user") continue;
+    const line = cleanLine(textOf(messages[i]));
+    if (!line) continue;
+    latest = latest || line;
+    if (isTopical(line)) return clipText(line, 48);
+  }
+  return clipText(title || latest, 48);
+}
+const clipText = (text, n) => (text.length > n ? text.slice(0, n - 1) + "…" : text);
 
 function messagesFrom(getResult) {
   return arr(getResult?.messages ?? getResult?.session?.messages ?? getResult?.transcript);
