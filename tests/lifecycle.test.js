@@ -284,6 +284,46 @@ describe("lifecycle", () => {
     await assert.doesNotReject(main.onUnload());
   });
 
+  it("notifies once when an agent starts needing you, with what it asks", async () => {
+    const now = Date.now();
+    let ask = false;
+    const messages = () => (ask ? [user("go"), assistant("Should I delete the old files?")] : [user("go")]);
+    const { pi, t } = fresh({ respond: host({ sessions: [{ id: "s1", title: "Cleanup", updatedAt: now }], running: () => !ask, messages }) });
+    await t.poll();
+    assert.deepEqual(pi.notifications, []);
+    ask = true;
+    await t.poll();
+    await sleep(0);
+    assert.deepEqual(pi.notifications, [{ kind: "native", title: "Cleanup is waiting for your reply", body: "Should I delete the old files?" }]);
+    await t.poll(); // still waiting: no second notification
+    await sleep(0);
+    assert.equal(pi.notifications.length, 1);
+  });
+
+  it("falls back to an in-app notice and follows the language and the notify setting", async () => {
+    const now = Date.now();
+    let ask = false;
+    const messages = () => (ask ? [user("go"), assistant("Should I?")] : [user("go")]);
+    const settings = { autoOpen: "working", notify: true };
+    const { pi, main, t } = fresh({ respond: host({ sessions: [{ id: "s1", title: "", updatedAt: now }], running: () => !ask, messages }), nativeShown: false, locale: "zh-CN", settings });
+    await main.onLoad();
+    await t.poll();
+    ask = true;
+    await t.poll();
+    await sleep(0);
+    assert.deepEqual(pi.notifications, [{ kind: "notice", title: "未命名会话 正在等待你的回复", body: "Should I?" }]);
+    // turned off: nothing more, even for a new need
+    settings.notify = false;
+    pi.on.find(([n]) => n === "plugin:settingsChanged")[1]();
+    await sleep(0);
+    ask = false;
+    await t.poll();
+    ask = true;
+    await t.poll();
+    await sleep(0);
+    assert.equal(pi.notifications.length, 1);
+  });
+
   it("only accepts known autoOpen values and re-reads them when settings change", async () => {
     const settings = { autoOpen: "rm -rf" };
     const { pi, main, t } = fresh({ respond: host({ sessions: [] }), settings });
