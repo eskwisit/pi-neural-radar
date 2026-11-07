@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.27.1
+
+### Fixes
+
+- **main:** always show the in-app notice and log each notification (`4097fdd`)
+
+### Tests
+
+- **tests:** cover the in-app notice next to a failing system notification (`362d02a`)
+
+### Documentation
+
+- **readme:** explain why the in-app notice always goes out (`e850560`)
+
 ## 0.27.0
 
 ### Features

@@ -82,7 +82,7 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 |---|---|
 | `ui.view` | the radar view in the work panel, and opening it automatically |
 | `desktop.control` | reading sessions, agent status, subagents and pending plans; switching session, sending a message, approving a plan, stopping an agent |
-| `notify` | a system notification (or an in-app notice) when an agent needs you |
+| `notify` | a system notification and an in-app notice when an agent needs you |
 
 `desktop.control` is a high-risk permission: it lets the plugin act on your sessions. The plugin only
 acts on a session when you click a button in the drawer; everything else it does is read-only,
