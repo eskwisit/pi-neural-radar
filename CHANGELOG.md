@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.27.0
+
+### Features
+
+- notify when an agent needs you (`ca9f270`)
+
+### Documentation
+
+- **readme:** describe notifications and the notify permission (`d861f2c`)
+- **readme:** explain why command approvals are not visible (`005c5a9`)
+
+### Tests
+
+- **tests:** add notification calls to the fake host (`742642b`)
+- **tests:** cover notifications when an agent needs you (`099ed42`)
+
 ## 0.26.0
 
 ### Features
