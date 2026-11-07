@@ -43,6 +43,16 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 | Only when an agent needs me | an agent waits for your reply, or a plan waits for approval |
 | Never | only from the command **Neural Radar: Open** |
 
+## Notifications
+
+When an agent starts needing you (it ends its turn with a question, waits for your reply, or a
+Plan or Goal waits for approval), the radar shows a system notification with the session name and
+what it asks. When the system does not show it (notifications are off for PI-Desktop, or not
+supported), PI-Desktop shows an in-app notice instead. You get one notification each time an agent
+starts needing you, not one per poll, and none for agents that already waited when the radar
+started. Clicking the notification brings PI-Desktop to the front; it does not switch session.
+Turn it off with **Notify me when an agent needs me** (Plugins → Neural Radar → Settings).
+
 ## Stepping in
 
 Click an agent (its neuron, its tooltip or its chip in the top bar) to toggle its drawer. While the
@@ -71,6 +81,7 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 |---|---|
 | `ui.view` | the radar view in the work panel, and opening it automatically |
 | `desktop.control` | reading sessions, agent status, subagents and pending plans; switching session, sending a message, approving a plan, stopping an agent |
+| `notify` | a system notification (or an in-app notice) when an agent needs you |
 
 `desktop.control` is a high-risk permission: it lets the plugin act on your sessions. The plugin only
 acts on a session when you click a button in the drawer; everything else it does is read-only,
