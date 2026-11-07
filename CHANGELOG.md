@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.26.0
+
+### Features
+
+- give each main agent of a session its own cluster with its subagents (`46558a4`)
+
+### Documentation
+
+- **readme:** describe a cluster for each main agent (`df18ce5`)
+
+### Tests
+
+- **tests:** cover a cluster for each main agent of a session (`8875d24`)
+
 ## 0.25.1
 
 ### Features
