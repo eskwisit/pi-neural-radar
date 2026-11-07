@@ -4,22 +4,27 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
 
 ![Neural Radar: You at the centre with 3 agents waiting on you; an agent asking a question (its drawer open on the right, with the question and its answers), an agent waiting for your reply and a plan awaiting approval; a working agent with explorer, fixer and test-runner subagents and a working goal with ui-designer and code-reviewer; a finished agent fading at the edge; tooltips showing what each agent works on now, its state, the tool context and how long ago](docs/neural-radar.webp)
 
-- **You** sit at the centre. Each agent is a cluster of neurons. The You label counts the agents
-  waiting on you, or reads **Idle**, and the centre is not clickable.
-- **Every agent has its own cluster**: each session, and each agent that a session starts (a
-  subagent), also when it is the only one on the radar. The cluster of a started agent sits next to
-  the session that started it, with a link to it.
-- **Started agents**: the drawer of an agent that a session started shows its task, its model, its
-  tool calls, its tokens, its activity and the session that started it. To send a message to it or
-  stop it, open the session.
+- **You** sit at the centre. Each agent (a session) is a cluster of neurons; its subagents are the
+  small clusters behind it. The You label counts the agents waiting on you, or reads **Idle**, and
+  the centre is not clickable.
+- **Every agent has its own cluster**, also when it is the only one on the radar: you → agent →
+  subagents.
+- **Every main agent has its own cluster.** As in the session's chat (*Main agent → delegated
+  tasks*), each run of the agent's own work after your message or after its text is one main agent
+  with the subagents it started. When a session has 2 or more main agents with subagents on the
+  radar, each main agent gets its own cluster next to its session, with a link to it, and its
+  subagents fan around it. Its drawer shows what it said before it started them, its subagents and
+  its activity. To send a message to it or stop it, open the session.
+- **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
+  further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
 - **Every agent shows its tooltip.** The first line is what it works on now: the first line of
   your latest prompt that names a topic, so it follows the session when it changes subject (short
   go-aheads like "ok" or "build it" are skipped). The second line is its state, then one live
   detail, the tokens its own tool calls added to its context (an estimate from their size), and
   how long ago it last did something, e.g. `Working · Edit index.html · 12.4K tokens · 12s ago`.
   The detail is the question or plan waiting for you, the running subagent and its task, or the
-  tool in use and its target. The hovered agent's tooltip, and then the open one's, are drawn on top. An agent that
-  a session started reads as its role (`explorer`, `fixer`, …) with the task it was given.
+  tool in use and its target. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent reads
+  as its role (`explorer`, `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
   with a question for you, or a plan waits for approval), working agents further out, finished
   ones at the edge. An agent keeps its own direction from you for
@@ -41,15 +46,16 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 ## Stepping in
 
 Click an agent (its neuron, its tooltip or its chip in the top bar) to toggle its drawer. While the
-drawer is open, the radar slides so the agent sits in the middle of the space the drawer leaves
-visible, however far it is from you.
+drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
+drawer leaves visible, however far they are from you.
 
 The top of the drawer stays put: the session name (on one line, cut short with "…" when it is long),
 your latest prompt, its state, its model and the actions below. Each subagent
 in **Subagents** shows the tokens its transcript reports so far, marked `≥`: a lower bound, since
 the host does not record every model call of a subagent in the transcript.
 **Activity** names each tool with its target (a file, a command, a pattern or a host). **Subagents** and **Activity** fold
-open beneath it; an open one scrolls inside itself, so the drawer never scrolls. The drawer offers:
+open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
+drawer from a subagent unfolds Subagents on it. The drawer offers:
 
 - **Reply**: when an agent ended its turn asking you something, the drawer shows what it asked and
   your reply goes straight to it
