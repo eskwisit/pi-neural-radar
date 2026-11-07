@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.25.1
+
+### Features
+
+- give every agent a session starts its own cluster (`7abbdcf`)
+
+### Fixes
+
+- **view:** say tokens instead of tool ctx in the agent tooltip (`a6f5eeb`)
+
+### Documentation
+
+- **readme:** describe a cluster for each started agent (`8d01f1f`)
+- **readme:** show tokens in the tooltip example (`bb5ba83`)
+
+### Tests
+
+- **tests:** cover a cluster for each started agent (`bd72ce4`)
+
 ## 0.24.1
 
 ### Breaking changes

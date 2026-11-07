@@ -2,7 +2,7 @@
 	"schemaVersion": 1,
 	"id": "eskwisit.neural-radar",
 	"name": "Neural Radar",
-	"version": "0.24.1",
+	"version": "0.25.1",
 	"description": "A live neural map of your running agents and their subagents. You sit at the centre; the more an agent needs you, the closer it moves. Click an agent to jump to its session, approve a plan, send it a message or stop it.",
 	"author": "eskwisit",
 	"license": "Apache-2.0",
@@ -22,7 +22,7 @@
 		}
 	},
 	"safetyNotes": "Uses the high-risk desktop.control permission to read the session list, agent status, transcripts (last 60 messages), subagents and pending plans, and, only when you click in the drawer, to open a session, send a message, approve or reject a plan, or stop or abort a turn (stop and abort need a second confirming click). ui.view docks the radar in the work panel. No network access, no file access, and nothing stored besides its own setting.",
-	"changelog": "Pre-fill in session and its composer.suggest permission are removed, and a lone agent now shows as its own cluster instead of merging into You.",
+	"changelog": "Every agent that a session starts now gets its own cluster next to that session, and the agent tooltip says tokens instead of tool ctx.",
 	"contributes": {
 		"views": [
 			{
