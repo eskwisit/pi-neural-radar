@@ -294,10 +294,14 @@ describe("lifecycle", () => {
     ask = true;
     await t.poll();
     await sleep(0);
-    assert.deepEqual(pi.notifications, [{ kind: "native", title: "Cleanup is waiting for your reply", body: "Should I delete the old files?" }]);
+    // the in-app notice always goes out too: a "shown" system notification can still never appear
+    assert.deepEqual(pi.notifications, [
+      { kind: "native", title: "Cleanup is waiting for your reply", body: "Should I delete the old files?" },
+      { kind: "notice", title: "Cleanup is waiting for your reply", body: "Should I delete the old files?" },
+    ]);
     await t.poll(); // still waiting: no second notification
     await sleep(0);
-    assert.equal(pi.notifications.length, 1);
+    assert.equal(pi.notifications.length, 2);
   });
 
   it("falls back to an in-app notice and follows the language and the notify setting", async () => {
@@ -322,6 +326,27 @@ describe("lifecycle", () => {
     await t.poll();
     await sleep(0);
     assert.equal(pi.notifications.length, 1);
+  });
+
+  it("still shows the in-app notice when the system notification fails, and logs the attempt", async () => {
+    const now = Date.now();
+    let ask = false;
+    const messages = () => (ask ? [user("go"), assistant("Should I?")] : [user("go")]);
+    const { pi, t } = fresh({ respond: host({ sessions: [{ id: "s1", title: "Build", updatedAt: now }], running: () => !ask, messages }) });
+    pi.ui.showNativeNotification = () => Promise.reject(Object.assign(new Error("no"), { code: "UNAVAILABLE" }));
+    const logged = [];
+    const log = console.log;
+    console.log = (...a) => { logged.push(a.join(" ")); };
+    try {
+      await t.poll();
+      ask = true;
+      await t.poll();
+      await sleep(0);
+    } finally {
+      console.log = log;
+    }
+    assert.deepEqual(pi.notifications, [{ kind: "notice", title: "Build is waiting for your reply", body: "Should I?" }]);
+    assert.deepEqual(logged, ["notify reply for session s1: system failed (UNAVAILABLE), in-app shown"]);
   });
 
   it("only accepts known autoOpen values and re-reads them when settings change", async () => {
