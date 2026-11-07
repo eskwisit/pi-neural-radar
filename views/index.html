@@ -163,6 +163,8 @@ const COPY = {
     abort: 'Abort',
     confirmAbort: 'Confirm abort',
     stopNote: 'Stop finishes at the next safe point; Abort ends the turn now.',
+    startedBy: 'Started by {title}',
+    childNote: 'This agent was started by its session. To message or stop it, open the session.',
     subagentsHeading: 'Subagents ({n})',
     toolCalls: '{n} tool calls',
     lastTool: 'last {tool}',
@@ -238,6 +240,8 @@ const COPY = {
     abort: '中止',
     confirmAbort: '确认中止',
     stopNote: '“停止”会在下一个安全点结束；“中止”会立即结束本回合。',
+    startedBy: '由 {title} 启动',
+    childNote: '此智能体由该会话启动。要给它发消息或停止它，请打开会话。',
     subagentsHeading: '子智能体（{n}）',
     toolCalls: '{n} 次工具调用',
     lastTool: '最近：{tool}',
@@ -297,7 +301,7 @@ function ageOf(a) {
 function tipLine(a) {
   const stat = a.reply ? t('needsReply') : statusLabel(a.status);
   let fact = '';
-  const q = a.question, p = a.plan, running = a.subs.filter(s => s.status === 'run');
+  const q = a.question, p = a.plan, running = (a.launched || []).filter(s => s.status === 'run');
   if (q?.q) fact = `“${q.q}”`;
   else if (a.reply) fact = `“${a.reply}”`;
   else if (p) fact = p.title || t(p.kind === 'goal' ? 'goalReady' : 'planReady');
@@ -431,29 +435,29 @@ function clusterPts(owner, n, rad, hubR, pr = 1) {
 }
 
 // ---------- live agents (fed by the plugin's main process) ----------
-const MAX_SUBS = 6;
-function mkSub(id, role) {
-  const s = { id, role, status: 'run', description: '', x: 0, y: 0, born: now(), seed: Math.random() * 10, dispatch: true };
-  s.pts = clusterPts(s, 5, 15, 3.8, 1.3); s.hub = s.pts[0];
-  return s;
-}
 const agents = [];
 const LANES = 12;
 // each agent keeps a lane (direction from you) for life: the free lane furthest from the others
-function pickLane() {
-  let best = 0.04, bestD = -1;
+// an agent started by another takes the free lane nearest to the agent that started it
+function pickLane(parentId) {
+  const parent = parentId ? agents.find(x => x.id === parentId) : null;
+  const gap = (p, q) => { const x = Math.abs(p - q); return Math.min(x, 1 - x); };
+  let best = 0.04, bestD = -1, near = null, nearG = Infinity;
   for (let i = 0; i < LANES; i++) {
     const f = (i + 0.5) / LANES;
     let d = 1;
-    for (const a of agents) { const x = Math.abs(a.lane - f); d = Math.min(d, x, 1 - x); }
+    for (const a of agents) d = Math.min(d, gap(a.lane, f));
     if (d > bestD) { bestD = d; best = f; }
+    // free: no agent holds this lane yet
+    if (parent && d > 0.5 / LANES && gap(parent.lane, f) < nearG) { nearG = gap(parent.lane, f); near = f; }
   }
-  return best;
+  return near ?? best;
 }
-function mkAgent(id) {
+function mkAgent(id, parentId) {
   const a = { id, desc: '', title: '', task: '', status: 'run', attention: 0.2, target: 0.2, subs: [], log: [], x: NaN, y: NaN,
-    seed: Math.random() * 10, flash: 0, model: '', question: null, plan: null, active: false, lane: pickLane() };
+    seed: Math.random() * 10, flash: 0, model: '', question: null, plan: null, active: false, lane: pickLane(parentId) };
   a.pts = clusterPts(a, 15, 34, 6, 1.5); a.hub = a.pts[0];
+  a.dispatch = !!parentId; // started by another agent: the hand-off signal fires once
   return a;
 }
 
@@ -469,17 +473,12 @@ function sync(model) {
   for (const m of model.agents || []) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
-    if (!a) { a = mkAgent(m.id); agents.push(a); }
-    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [] });
+    if (!a) { a = mkAgent(m.id, m.parent); agents.push(a); }
+    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [],
+      session: m.session || m.id, parent: m.parent || null, child: !!m.child, tokens: m.tokens || 0, toolCalls: m.toolCalls, lastTool: m.lastTool });
     a.target = attentionFor(m.status);
-    const subSeen = new Set();
-    for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
-      subSeen.add(ms.id);
-      let s = a.subs.find(x => x.id === ms.id);
-      if (!s) { s = mkSub(ms.id, ms.role); a.subs.push(s); }
-      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, toolCalls: ms.toolCalls, lastTool: ms.lastTool, tokens: ms.tokens || 0 });
-    }
-    a.subs = a.subs.filter(s => subSeen.has(s.id));
+    // the agents it started: each has its own cluster, and its drawer lists them
+    a.launched = m.child ? [] : (m.subs || []);
   }
   for (let i = agents.length - 1; i >= 0; i--) {
     if (seen.has(agents[i].id)) continue;
@@ -557,6 +556,8 @@ function buildGraph() {
     near.sort((x, y) => x[0] - y[0]);
     for (const [d2, q] of near) { if (p.deg >= MIN_DEG) break; add(p, q, Math.sqrt(d2) / (thr * (p.sc || 1))); }
   }
+  // an agent's cluster is wired to the agent that started it
+  for (const a of agents) { const p = a.parent && agents.find(x => x.id === a.parent); if (p) add(a.hub, p.hub, 0.5); }
   // a subagent is always wired to its agent
   for (const a of agents) for (const s of a.subs) add(s.hub, a.hub, 0.5);
   // one connected network: join every separate patch along the shortest available link
@@ -718,6 +719,13 @@ function update(dt, t) {
     if (Math.random() < rate * dt) {
       a.flash = 1;
       spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
+    }
+    // an agent started by another: a hand-off when it starts, then traffic while it works
+    const from = a.parent && agents.find(x => x.id === a.parent);
+    if (from) {
+      if (a.dispatch) { a.dispatch = false; spikes.push({ path: [from.hub, hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
+      if (a.status === 'run' && Math.random() < 0.35 * dt) spikes.push({ path: [hub, from.hub], s: 0, v: 120 * K, color: [255, 255, 255] });
+      else if (a.status === 'run' && Math.random() < 0.08 * dt) spikes.push({ path: [from.hub, hub], s: 0, v: 110 * K, color: rgb(HANDOFF) });
     }
     for (const s of a.subs) {
       if (s.dispatch) { s.dispatch = false; spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
@@ -997,7 +1005,7 @@ function toast(text) {
 async function act(a, payload, color, done) {
   fire(a, color);
   try {
-    const r = await window.pluginBridge.invoke('radar.action', { sessionId: a.id, ...payload });
+    const r = await window.pluginBridge.invoke('radar.action', { sessionId: a.session || a.id, ...payload });
     if (!r?.ok) toast(r?.code && COPY.en['err_' + r.code] ? t('err_' + r.code) : r?.message || t('toastFailed'));
     else if (done) toast(done);
     return r;
@@ -1034,7 +1042,7 @@ function renderPanel() {
   const col = ST[a.status];
   const live = a.status !== 'done';
   const q = a.question, p = a.plan;
-  const nRun = a.subs.filter(s => s.status === 'run').length;
+  const nRun = a.launched.filter(s => s.status === 'run').length;
   const armedStop = armed.get('stop') === a.id, armedAbort = armed.get('abort') === a.id;
   panel.innerHTML = `
     <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
@@ -1043,7 +1051,8 @@ function renderPanel() {
     <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span></h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
-    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${a.child ? esc([a.toolCalls ? t('toolCalls', { n: a.toolCalls }) : '', a.lastTool ? t('lastTool', { tool: a.lastTool }) : '', a.tokens > 0 ? t('tokensAtLeast', { tokens: tokensText(a.tokens) }) : ''].filter(Boolean).join(' · ')) : nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    ${a.child ? `<div class="meta">${esc(t('startedBy', { title: agents.find(x => x.id === a.parent)?.title || t('untitledSession') }))}</div>` : ''}
     </div>
 
 
@@ -1066,23 +1075,23 @@ function renderPanel() {
         <div class="note">${esc(t('approveNote'))}</div>
       </div></div>` : ''}
 
-    ${live || a.reply ? `<div class="section"><h4>${esc(t(a.reply ? 'replyToAgent' : 'messageAgent'))}</h4>
+    ${(live || a.reply) && !a.child ? `<div class="section"><h4>${esc(t(a.reply ? 'replyToAgent' : 'messageAgent'))}</h4>
       <textarea id="draft" placeholder="${esc(t('draftPlaceholder'))}">${esc(draft)}</textarea>
       <div class="sendrow"><span>${esc(t('sendHint'))}</span><button class="btn primary" data-act="send">${esc(t('sendToAgent'))}</button></div></div>` : ''}
 
     <div class="section"><h4>${esc(t('intervene'))}</h4>
       <div class="actions">
         <button class="btn" data-act="open">${esc(t('openSession'))}</button>
-        <button class="btn danger ${armedStop ? 'confirm' : ''}" data-act="stop" ${live && !a.reply ? '' : 'disabled'}>${esc(t(armedStop ? 'confirmStop' : 'stop'))}</button>
-        <button class="btn danger ${armedAbort ? 'confirm' : ''}" data-act="abort" ${live && !a.reply ? '' : 'disabled'}>${esc(t(armedAbort ? 'confirmAbort' : 'abort'))}</button>
+        ${a.child ? '' : `<button class="btn danger ${armedStop ? 'confirm' : ''}" data-act="stop" ${live && !a.reply ? '' : 'disabled'}>${esc(t(armedStop ? 'confirmStop' : 'stop'))}</button>
+        <button class="btn danger ${armedAbort ? 'confirm' : ''}" data-act="abort" ${live && !a.reply ? '' : 'disabled'}>${esc(t(armedAbort ? 'confirmAbort' : 'abort'))}</button>`}
       </div>
-      <div class="note">${esc(t('stopNote'))}</div></div>
+      <div class="note">${esc(t(a.child ? 'childNote' : 'stopNote'))}</div></div>
 
     </div>
 
     <div class="body ${hasOpen ? 'hasopen' : ''}">
-    <div class="section subs ${subsOpen ? 'open' : ''}"><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
-      ${subsOpen ? `<div class="scroll">${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
+    <div class="section subs ${subsOpen ? 'open' : ''}" ${a.child ? 'hidden' : ''}><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.launched.length }))}</h4>
+      ${subsOpen ? `<div class="scroll">${a.launched.length ? a.launched.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
           <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
           <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}${s.tokens > 0 ? ` · <span title="${esc(t('tokensAtLeastHint'))}">${esc(t('tokensAtLeast', { tokens: tokensText(s.tokens) }))}</span>` : ''}</small></div>
         </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}</div>` : ''}

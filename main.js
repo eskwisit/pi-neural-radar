@@ -281,8 +281,40 @@ function delegationsFrom(messages) {
     // only an explicit "running" counts as running; anything unknown is treated as finished
     status: s.status === "running" ? "run" : s.status === "completed" ? "done" : "stopped",
     tokens: usedBy.get(callOf.get(s.id) ?? s.id) ?? 0,
+    call: callOf.get(s.id) ?? s.id, // the Task call its messages point back to
     earlier: (seenAt.get(s.id) ?? -1) <= lastUser, // last mentioned before your latest message
   }));
+}
+
+/**
+ * Every agent a session starts (a Task delegation) is an agent on the radar with its own
+ * cluster, wired to the session that started it. Actions on it go to that session (`session`).
+ */
+function childAgent(sessionId, w, messages, active) {
+  const own = messages.filter((m) => w.call && parentCallOf(m) === w.call);
+  const modelMsg = [...own].reverse().find((m) => m?.modelId ?? m?.meta?.modelId);
+  return {
+    id: `${sessionId}::${w.id}`,
+    session: sessionId,
+    parent: sessionId,
+    child: true,
+    title: w.role,
+    desc: clipText(cleanLine(w.description), 48),
+    task: w.description,
+    status: w.status,
+    model: str(modelMsg?.modelId ?? modelMsg?.meta?.modelId),
+    toolTokens: 0,
+    tokens: w.tokens || 0,
+    toolCalls: w.toolCalls,
+    lastTool: w.lastTool,
+    active,
+    question: null,
+    reply: null,
+    replyContext: "",
+    plan: null,
+    subs: [],
+    log: activityLog(own),
+  };
 }
 
 /** An asktool call that has not been answered yet, with what the agent said leading up to it. */
@@ -503,7 +535,7 @@ async function poll() {
       const cached = mem.agent && mem.updatedAt === s.updatedAt && !mem.running && (mem.idleStreak || 0) >= 2 && mem.planKey === planKey && mem.wasActive === isActive;
       const keepFor = mem.attention === "need" ? REPLY_KEEP_MS : RECENT_MS;
       if (cached) {
-        if (now - lastSeen < keepFor) agents.push({ ...mem.agent, active: isActive });
+        if (now - lastSeen < keepFor) agents.push(...[mem.agent, ...arr(mem.children)].map((x) => ({ ...x, active: isActive })));
         continue;
       }
       if (now - (s.updatedAt || 0) > REPLY_KEEP_MS) { memory.set(s.id, { ...mem, running: false, attention: "" }); continue; }
@@ -553,18 +585,19 @@ async function poll() {
       reply,
       replyContext: reply ? awaiting.context : "",
       plan,
-      subs,
+      subs, // the agents it started: listed in its drawer, each drawn as its own cluster
       log: activityLog(messages),
     };
+    const children = subs.map((x) => childAgent(s.id, x, messages, isActive));
     // a plainly finished agent only lingers for a while; one waiting for your reply stays
-    if (statusKey !== "done" || recent) agents.push(agent);
+    if (statusKey !== "done" || recent) agents.push(agent, ...children);
 
     // edges that may open the radar
     const runCount = subs.filter((x) => x.status === "run").length;
     const becameRunning = running && !mem.running;
     const newSubagent = runCount > (mem.subCount || 0);
     const needsYouNow = (statusKey === "need" || statusKey === "approve") && mem.attention !== statusKey;
-    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", updatedAt: s.updatedAt, planKey, agent, wasActive: isActive });
+    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", updatedAt: s.updatedAt, planKey, agent, children, wasActive: isActive });
     // the first poll only learns the baseline: agents already running at load do not pop the view
     if (!firstPoll) maybeReveal({ becameRunning, newSubagent, needsYouNow });
   }
