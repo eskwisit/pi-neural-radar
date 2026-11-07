@@ -13,11 +13,15 @@
  *   plans/resolve                                                — "dangerous": sent with confirm
  * The host has no "turn started" event for plugins, so the radar polls. It polls fast while
  * something is running and slowly while everything is idle.
+ * When an agent starts needing you, a system notification tells you (`notify`; an in-app notice
+ * when the system does not show it), unless the `notify` setting is off.
  *
  * Not reachable for plugins: question cards an agent opens mid-turn (`asktool`) and tool
- * permission prompts. `agent/askTool/resolve` and `tool/resolvePermission` exist, but the
- * request ids they need only come from `agent/pendingInteractive`, which is not a plugin
- * operation, and a pending tool call is not in the transcript until it completes.
+ * permission prompts (a command waiting for your approval). `agent/askTool/resolve` and
+ * `tool/resolvePermission` exist, but the request ids they need only come from
+ * `agent/pendingInteractive`, which is not a plugin operation; plugins get no event for them,
+ * `agent/getStatus` reports `pendingToolConfirmations: 0` for local sessions, and a pending tool
+ * call is not in the transcript until it completes.
  * View channel: window.pluginBridge.invoke("radar.*", payload) → onPanelInvoke.
  */
 
@@ -32,6 +36,7 @@ const STALE_MS = 6 * 60 * 60 * 1000; // sessions untouched for this long are not
 const REOPEN_COOLDOWN_MS = 30 * 1000;
 
 let autoOpen = "working";
+let notifyOn = true;
 let timer = null;
 let stopped = false;
 let model = { agents: [], error: null };
@@ -630,6 +635,7 @@ async function poll() {
     memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", updatedAt: s.updatedAt, planKey, agent, mains, wasActive: isActive });
     // the first poll only learns the baseline: agents already running at load do not pop the view
     if (!firstPoll) maybeReveal({ becameRunning, newSubagent, needsYouNow });
+    if (!firstPoll && needsYouNow) void notifyNeed(agent);
   }
 
   firstPoll = false;
@@ -637,6 +643,29 @@ async function poll() {
   // poll fast only while an agent is actually running; one waiting for you is picked up by
   // the turnEnded / activated events (and the slow poll) as soon as you act
   return agents.some((a) => a.status === "run");
+}
+
+// what a notification says, in the user's language
+const NOTE = {
+  en: { question: "{title} has a question for you", reply: "{title} is waiting for your reply", plan: "{title}: plan waiting for approval", goal: "{title}: goal waiting for approval", untitled: "Untitled session" },
+  zh: { question: "{title} 有问题要问你", reply: "{title} 正在等待你的回复", plan: "{title}：计划等待批准", goal: "{title}：目标等待批准", untitled: "未命名会话" },
+};
+
+/** Tell the user an agent needs them: a system notification, else an in-app notice. */
+async function notifyNeed(agent) {
+  if (!notifyOn) return;
+  const lang = await Promise.resolve(pi.app?.getLocale?.()).catch(() => "");
+  const L = str(lang).toLowerCase().startsWith("zh") ? NOTE.zh : NOTE.en;
+  const kind = agent.question ? "question" : agent.reply ? "reply" : agent.plan?.kind === "goal" ? "goal" : "plan";
+  const title = L[kind].replace("{title}", clipText(agent.title || L.untitled, 60));
+  const body = clipText(str(agent.question?.q || agent.reply || agent.plan?.title || agent.plan?.question || agent.desc).replace(/\s+/g, " ").trim(), 180);
+  try {
+    const shown = await pi.ui.showNativeNotification({ title, body });
+    if (shown?.shown) return;
+  } catch {
+    /* no system notification: fall back to the in-app notice */
+  }
+  try { await pi.ui.notify({ title, body }); } catch { /* nothing more to try */ }
 }
 
 function maybeReveal({ becameRunning, newSubagent, needsYouNow }) {
@@ -745,6 +774,7 @@ async function readSettings() {
   try {
     const s = await pi.plugin.getSettings();
     if (["working", "subagents", "attention", "off"].includes(s?.autoOpen)) autoOpen = s.autoOpen;
+    if (typeof s?.notify === "boolean") notifyOn = s.notify;
   } catch {
     /* keep the default */
   }

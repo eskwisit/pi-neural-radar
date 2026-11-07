@@ -13,15 +13,15 @@
 		"en": {
 			"name": "Neural Radar",
 			"description": "A live neural map of your running agents and their subagents. You sit at the centre; the more an agent needs you, the closer it moves. Click an agent to jump to its session, approve a plan, send it a message or stop it.",
-			"safetyNotes": "Uses the high-risk desktop.control permission to read the session list, agent status, transcripts (last 60 messages), subagents and pending plans, and, only when you click in the drawer, to open a session, send a message, approve or reject a plan, or stop or abort a turn (stop and abort need a second confirming click). ui.view docks the radar in the work panel. No network access, no file access, and nothing stored besides its own setting."
+			"safetyNotes": "Uses the high-risk desktop.control permission to read the session list, agent status, transcripts (last 60 messages), subagents and pending plans, and, only when you click in the drawer, to open a session, send a message, approve or reject a plan, or stop or abort a turn (stop and abort need a second confirming click). ui.view docks the radar in the work panel. notify shows a system notification (or an in-app notice) when an agent needs you; turn it off in the plugin settings. No network access, no file access, and nothing stored besides its own setting."
 		},
 		"zh-CN": {
 			"name": "神经雷达",
 			"description": "实时神经网络图，展示正在运行的智能体及其子智能体。你位于中心，越需要你的智能体离你越近。点击智能体即可跳转到它的会话、批准计划、发送消息或停止它。",
-			"safetyNotes": "使用高风险权限 desktop.control 读取会话列表、智能体状态、对话记录（最近 60 条消息）、子智能体和待批准的计划；只有在你于抽屉中点击时，才会打开会话、发送消息、批准或拒绝计划、停止或中止当前轮次（停止和中止需要再次点击确认）。ui.view 将雷达停靠在工作面板中。不访问网络，不访问文件，除自身设置外不存储任何内容。"
+			"safetyNotes": "使用高风险权限 desktop.control 读取会话列表、智能体状态、对话记录（最近 60 条消息）、子智能体和待批准的计划；只有在你于抽屉中点击时，才会打开会话、发送消息、批准或拒绝计划、停止或中止当前轮次（停止和中止需要再次点击确认）。ui.view 将雷达停靠在工作面板中。notify 在智能体需要你时显示系统通知（或应用内提示），可在插件设置中关闭。不访问网络，不访问文件，除自身设置外不存储任何内容。"
 		}
 	},
-	"safetyNotes": "Uses the high-risk desktop.control permission to read the session list, agent status, transcripts (last 60 messages), subagents and pending plans, and, only when you click in the drawer, to open a session, send a message, approve or reject a plan, or stop or abort a turn (stop and abort need a second confirming click). ui.view docks the radar in the work panel. No network access, no file access, and nothing stored besides its own setting.",
+	"safetyNotes": "Uses the high-risk desktop.control permission to read the session list, agent status, transcripts (last 60 messages), subagents and pending plans, and, only when you click in the drawer, to open a session, send a message, approve or reject a plan, or stop or abort a turn (stop and abort need a second confirming click). ui.view docks the radar in the work panel. notify shows a system notification (or an in-app notice) when an agent needs you; turn it off in the plugin settings. No network access, no file access, and nothing stored besides its own setting.",
 	"changelog": "Each main agent of a session now has its own cluster with its subagents in its fan, and subagents are back in the fan of the agent that started them.",
 	"contributes": {
 		"views": [
@@ -67,10 +67,16 @@
 						"value": "off"
 					}
 				]
+			},
+			{
+				"key": "notify",
+				"title": "Notify me when an agent needs me",
+				"type": "boolean",
+				"default": true
 			}
 		]
 	},
-	"permissions": ["ui.view", "desktop.control"],
+	"permissions": ["ui.view", "desktop.control", "notify"],
 	"engines": {
 		"piDesktop": ">=0.9.0"
 	},
