@@ -163,8 +163,9 @@ const COPY = {
     abort: 'Abort',
     confirmAbort: 'Confirm abort',
     stopNote: 'Stop finishes at the next safe point; Abort ends the turn now.',
-    startedBy: 'Started by {title}',
-    childNote: 'This agent was started by its session. To message or stop it, open the session.',
+    mainAgent: 'Main agent',
+    inSession: 'In session {title}',
+    childNote: 'This main agent works in its session. To message or stop it, open the session.',
     subagentsHeading: 'Subagents ({n})',
     toolCalls: '{n} tool calls',
     lastTool: 'last {tool}',
@@ -240,8 +241,9 @@ const COPY = {
     abort: '中止',
     confirmAbort: '确认中止',
     stopNote: '“停止”会在下一个安全点结束；“中止”会立即结束本回合。',
-    startedBy: '由 {title} 启动',
-    childNote: '此智能体由该会话启动。要给它发消息或停止它，请打开会话。',
+    mainAgent: '主智能体',
+    inSession: '会话：{title}',
+    childNote: '此主智能体在其会话中工作。要给它发消息或停止它，请打开会话。',
     subagentsHeading: '子智能体（{n}）',
     toolCalls: '{n} 次工具调用',
     lastTool: '最近：{tool}',
@@ -301,7 +303,7 @@ function ageOf(a) {
 function tipLine(a) {
   const stat = a.reply ? t('needsReply') : statusLabel(a.status);
   let fact = '';
-  const q = a.question, p = a.plan, running = (a.launched || []).filter(s => s.status === 'run');
+  const q = a.question, p = a.plan, running = a.subs.filter(s => s.status === 'run');
   if (q?.q) fact = `“${q.q}”`;
   else if (a.reply) fact = `“${a.reply}”`;
   else if (p) fact = p.title || t(p.kind === 'goal' ? 'goalReady' : 'planReady');
@@ -435,10 +437,16 @@ function clusterPts(owner, n, rad, hubR, pr = 1) {
 }
 
 // ---------- live agents (fed by the plugin's main process) ----------
+const MAX_SUBS = 6;
+function mkSub(id, role) {
+  const s = { id, role, status: 'run', description: '', x: 0, y: 0, born: now(), seed: Math.random() * 10, dispatch: true };
+  s.pts = clusterPts(s, 5, 15, 3.8, 1.3); s.hub = s.pts[0];
+  return s;
+}
 const agents = [];
 const LANES = 12;
 // each agent keeps a lane (direction from you) for life: the free lane furthest from the others
-// an agent started by another takes the free lane nearest to the agent that started it
+// a main agent of a session with several takes the free lane nearest to its session
 function pickLane(parentId) {
   const parent = parentId ? agents.find(x => x.id === parentId) : null;
   const gap = (p, q) => { const x = Math.abs(p - q); return Math.min(x, 1 - x); };
@@ -457,7 +465,7 @@ function mkAgent(id, parentId) {
   const a = { id, desc: '', title: '', task: '', status: 'run', attention: 0.2, target: 0.2, subs: [], log: [], x: NaN, y: NaN,
     seed: Math.random() * 10, flash: 0, model: '', question: null, plan: null, active: false, lane: pickLane(parentId) };
   a.pts = clusterPts(a, 15, 34, 6, 1.5); a.hub = a.pts[0];
-  a.dispatch = !!parentId; // started by another agent: the hand-off signal fires once
+  a.dispatch = !!parentId; // a main agent: the hand-off signal from its session fires once
   return a;
 }
 
@@ -475,10 +483,17 @@ function sync(model) {
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id, m.parent); agents.push(a); }
     Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [],
-      session: m.session || m.id, parent: m.parent || null, child: !!m.child, tokens: m.tokens || 0, toolCalls: m.toolCalls, lastTool: m.lastTool });
+      session: m.session || m.id, parent: m.parent || null, child: !!m.child, tokens: m.tokens || 0 });
+    if (m.child && !m.title) a.title = t('mainAgent');
     a.target = attentionFor(m.status);
-    // the agents it started: each has its own cluster, and its drawer lists them
-    a.launched = m.child ? [] : (m.subs || []);
+    const subSeen = new Set();
+    for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
+      subSeen.add(ms.id);
+      let s = a.subs.find(x => x.id === ms.id);
+      if (!s) { s = mkSub(ms.id, ms.role); a.subs.push(s); }
+      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, toolCalls: ms.toolCalls, lastTool: ms.lastTool, tokens: ms.tokens || 0 });
+    }
+    a.subs = a.subs.filter(s => subSeen.has(s.id));
   }
   for (let i = agents.length - 1; i >= 0; i--) {
     if (seen.has(agents[i].id)) continue;
@@ -556,7 +571,7 @@ function buildGraph() {
     near.sort((x, y) => x[0] - y[0]);
     for (const [d2, q] of near) { if (p.deg >= MIN_DEG) break; add(p, q, Math.sqrt(d2) / (thr * (p.sc || 1))); }
   }
-  // an agent's cluster is wired to the agent that started it
+  // a main agent's cluster is wired to its session
   for (const a of agents) { const p = a.parent && agents.find(x => x.id === a.parent); if (p) add(a.hub, p.hub, 0.5); }
   // a subagent is always wired to its agent
   for (const a of agents) for (const s of a.subs) add(s.hub, a.hub, 0.5);
@@ -720,7 +735,7 @@ function update(dt, t) {
       a.flash = 1;
       spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
     }
-    // an agent started by another: a hand-off when it starts, then traffic while it works
+    // a main agent: a hand-off from its session when it starts, then traffic while it works
     const from = a.parent && agents.find(x => x.id === a.parent);
     if (from) {
       if (a.dispatch) { a.dispatch = false; spikes.push({ path: [from.hub, hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
@@ -1042,7 +1057,7 @@ function renderPanel() {
   const col = ST[a.status];
   const live = a.status !== 'done';
   const q = a.question, p = a.plan;
-  const nRun = a.launched.filter(s => s.status === 'run').length;
+  const nRun = a.subs.filter(s => s.status === 'run').length;
   const armedStop = armed.get('stop') === a.id, armedAbort = armed.get('abort') === a.id;
   panel.innerHTML = `
     <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
@@ -1051,8 +1066,8 @@ function renderPanel() {
     <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span></h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
-    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${a.child ? esc([a.toolCalls ? t('toolCalls', { n: a.toolCalls }) : '', a.lastTool ? t('lastTool', { tool: a.lastTool }) : '', a.tokens > 0 ? t('tokensAtLeast', { tokens: tokensText(a.tokens) }) : ''].filter(Boolean).join(' · ')) : nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
-    ${a.child ? `<div class="meta">${esc(t('startedBy', { title: agents.find(x => x.id === a.parent)?.title || t('untitledSession') }))}</div>` : ''}
+    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    ${a.child ? `<div class="meta">${esc(t('inSession', { title: agents.find(x => x.id === a.parent)?.title || t('untitledSession') }))}</div>` : ''}
     </div>
 
 
@@ -1090,8 +1105,8 @@ function renderPanel() {
     </div>
 
     <div class="body ${hasOpen ? 'hasopen' : ''}">
-    <div class="section subs ${subsOpen ? 'open' : ''}" ${a.child ? 'hidden' : ''}><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.launched.length }))}</h4>
-      ${subsOpen ? `<div class="scroll">${a.launched.length ? a.launched.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
+    <div class="section subs ${subsOpen ? 'open' : ''}"><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
+      ${subsOpen ? `<div class="scroll">${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
           <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
           <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}${s.tokens > 0 ? ` · <span title="${esc(t('tokensAtLeastHint'))}">${esc(t('tokensAtLeast', { tokens: tokensText(s.tokens) }))}</span>` : ''}</small></div>
         </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}</div>` : ''}

@@ -222,10 +222,31 @@ function textOf(message) {
 }
 
 /**
- * Subagents of the session's latest turn, with their latest known status and the tokens their
- * transcript messages report (a lower bound: not every model call of a subagent is recorded).
+ * The session's main agents, as PI-Desktop's chat shows them: every run of the agent's own tool
+ * calls after your message or after the agent's text is one "Main agent" with the tasks it
+ * delegated. Returns, per message, the group it belongs to (null for a subagent's messages), and
+ * each group's key (the id of the message that opened it, stable while the transcript scrolls)
+ * and what was said just before it.
+ */
+function groupsOf(messages) {
+  const at = [];
+  let cur = null;
+  messages.forEach((m, i) => {
+    if (parentCallOf(m)) { at.push(null); return; }
+    const opens = m?.role === "user" || (m?.role === "assistant" && !m?.toolName && textOf(m));
+    if (opens || !cur) cur = { key: str(m?.id) || `${ts(m?.createdAt ?? m?.created_at)}:${i}`, text: textOf(m), start: i };
+    at.push(cur);
+  });
+  return at;
+}
+
+/**
+ * Subagents of the session's latest turn, with their latest known status, the tokens their
+ * transcript messages report (a lower bound: not every model call of a subagent is recorded) and
+ * the main agent (group) that launched them.
  */
 function delegationsFrom(messages) {
+  const groupAt = groupsOf(messages);
   const subs = new Map();
   const callOf = new Map(); // delegationId → the Task call that launched it
   const usedBy = new Map(); // Task call id → tokens its subagent's messages report
@@ -257,13 +278,16 @@ function delegationsFrom(messages) {
       const name = b?.name;
       const details = b?.result?.details;
       if (name === "Task") {
+        const g = groupAt[i];
+        const launchedBy = g ? { group: g.key, groupText: g.text.slice(0, 220) } : {};
         if (details?.delegationId) {
           note(details, { description: b.args?.description });
+          Object.assign(subs.get(str(details.delegationId)), launchedBy);
           if (b.callId) callOf.set(str(details.delegationId), str(b.callId));
         }
         else if (b.callId && !b.result && !b.completedAt) {
           // still launching: keep a provisional entry keyed by the call id
-          subs.set(str(b.callId), { id: str(b.callId), role: str(b.args?.agent), description: str(b.args?.description), status: "running" });
+          subs.set(str(b.callId), { id: str(b.callId), role: str(b.args?.agent), description: str(b.args?.description), status: "running", ...launchedBy });
         }
         // a launch that came back without a delegation failed: nothing is running
       } else if (name === "TaskWait") {
@@ -287,32 +311,32 @@ function delegationsFrom(messages) {
 }
 
 /**
- * Every agent a session starts (a Task delegation) is an agent on the radar with its own
- * cluster, wired to the session that started it. Actions on it go to that session (`session`).
+ * One main agent of a session (a group of groupsOf) with the subagents it delegated to, when the
+ * session has more than one: it gets its own cluster, wired to its session. Actions on it go to
+ * that session (`session`).
  */
-function childAgent(sessionId, w, messages, active) {
-  const own = messages.filter((m) => w.call && parentCallOf(m) === w.call);
-  const modelMsg = [...own].reverse().find((m) => m?.modelId ?? m?.meta?.modelId);
+function mainAgent(sessionId, key, subs, messages, model, active) {
+  const groupAt = groupsOf(messages);
+  const own = messages.filter((m, i) => groupAt[i]?.key === key);
+  const said = str(subs.find((x) => x.groupText)?.groupText);
   return {
-    id: `${sessionId}::${w.id}`,
+    id: `${sessionId}::main:${key}`,
     session: sessionId,
     parent: sessionId,
     child: true,
-    title: w.role,
-    desc: clipText(cleanLine(w.description), 48),
-    task: w.description,
-    status: w.status,
-    model: str(modelMsg?.modelId ?? modelMsg?.meta?.modelId),
+    title: "", // the view names it "Main agent" in the user's language
+    desc: clipText(cleanLine(said), 48),
+    task: said,
+    status: subs.some((x) => x.status === "run") ? "run" : "done",
+    model,
     toolTokens: 0,
-    tokens: w.tokens || 0,
-    toolCalls: w.toolCalls,
-    lastTool: w.lastTool,
+    tokens: subs.reduce((n, x) => n + (x.tokens || 0), 0),
     active,
     question: null,
     reply: null,
     replyContext: "",
     plan: null,
-    subs: [],
+    subs,
     log: activityLog(own),
   };
 }
@@ -535,7 +559,7 @@ async function poll() {
       const cached = mem.agent && mem.updatedAt === s.updatedAt && !mem.running && (mem.idleStreak || 0) >= 2 && mem.planKey === planKey && mem.wasActive === isActive;
       const keepFor = mem.attention === "need" ? REPLY_KEEP_MS : RECENT_MS;
       if (cached) {
-        if (now - lastSeen < keepFor) agents.push(...[mem.agent, ...arr(mem.children)].map((x) => ({ ...x, active: isActive })));
+        if (now - lastSeen < keepFor) agents.push(...[mem.agent, ...arr(mem.mains)].map((x) => ({ ...x, active: isActive })));
         continue;
       }
       if (now - (s.updatedAt || 0) > REPLY_KEEP_MS) { memory.set(s.id, { ...mem, running: false, attention: "" }); continue; }
@@ -585,19 +609,25 @@ async function poll() {
       reply,
       replyContext: reply ? awaiting.context : "",
       plan,
-      subs, // the agents it started: listed in its drawer, each drawn as its own cluster
+      subs,
       log: activityLog(messages),
     };
-    const children = subs.map((x) => childAgent(s.id, x, messages, isActive));
+    // two or more main agents (see groupsOf) each get their own cluster with their own subagents;
+    // with one, its subagents stay around the session's cluster
+    const groups = [...new Set(subs.map((x) => x.group ?? ""))];
+    const mains = groups.length > 1
+      ? groups.map((g) => mainAgent(s.id, g, subs.filter((x) => (x.group ?? "") === g), messages, agent.model, isActive))
+      : [];
+    if (mains.length) agent.subs = [];
     // a plainly finished agent only lingers for a while; one waiting for your reply stays
-    if (statusKey !== "done" || recent) agents.push(agent, ...children);
+    if (statusKey !== "done" || recent) agents.push(agent, ...mains);
 
     // edges that may open the radar
     const runCount = subs.filter((x) => x.status === "run").length;
     const becameRunning = running && !mem.running;
     const newSubagent = runCount > (mem.subCount || 0);
     const needsYouNow = (statusKey === "need" || statusKey === "approve") && mem.attention !== statusKey;
-    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", updatedAt: s.updatedAt, planKey, agent, children, wasActive: isActive });
+    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", updatedAt: s.updatedAt, planKey, agent, mains, wasActive: isActive });
     // the first poll only learns the baseline: agents already running at load do not pop the view
     if (!firstPoll) maybeReveal({ becameRunning, newSubagent, needsYouNow });
   }
