@@ -122,10 +122,12 @@ Details for reviewers, including every host operation it calls, are in
   agent waiting for your reply stays up to 2 hours, or until you open its session and leave it
   without replying: then it counts as finished. Subagents from an earlier turn only stay while
   they are still running.
-- **Question cards asked mid-turn (`asktool`) and tool-permission prompts are not visible.**
-  PI-Desktop lets plugins answer them (`agent/askTool/resolve`, `tool/resolvePermission`), but
-  the request ids those need only come from `agent/pendingInteractive`, which is not a plugin
-  operation, and a pending tool call only reaches the transcript once it completes. The radar
+- **Question cards asked mid-turn (`asktool`) and tool-permission prompts (a command waiting for
+  your approval) are not visible.** PI-Desktop lets plugins answer them (`agent/askTool/resolve`,
+  `tool/resolvePermission`), but the request ids those need only come from
+  `agent/pendingInteractive`, which is not a plugin operation. Plugins get no event for them,
+  `agent/getStatus` reports no pending confirmation for local sessions, and a pending tool call
+  only reaches the transcript once it completes. The radar
   therefore sees such a question only after it was answered. Plan and Goal approvals, and
   questions asked in an agent's final message, are detected and answered from the radar.
 - Per-subagent stop is not available to plugins; Stop and Abort act on the whole agent.
