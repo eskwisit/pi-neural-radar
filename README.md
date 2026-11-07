@@ -47,8 +47,9 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 
 When an agent starts needing you (it ends its turn with a question, waits for your reply, or a
 Plan or Goal waits for approval), the radar shows a system notification with the session name and
-what it asks. When the system does not show it (notifications are off for PI-Desktop, or not
-supported), PI-Desktop shows an in-app notice instead. You get one notification each time an agent
+what it asks, and PI-Desktop shows the same text as an in-app notice. The in-app notice always
+goes out, because macOS can accept a system notification and still not show it (notifications off
+or never allowed for PI-Desktop, Focus mode). Each attempt is written to the plugin log. You get one notification each time an agent
 starts needing you, not one per poll, and none for agents that already waited when the radar
 started. Clicking the notification brings PI-Desktop to the front; it does not switch session.
 Turn it off with **Notify me when an agent needs me** (Plugins → Neural Radar → Settings).
