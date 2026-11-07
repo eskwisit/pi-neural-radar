@@ -46,16 +46,17 @@ function permissionError(permission = "desktop.control") {
 /**
  * A fake `pi` with spies. `respond(request)` answers pi.desktop.invoke; it may throw/reject.
  */
-function fakePi({ respond = () => ({}), active = null, settings = { autoOpen: "working" } } = {}) {
+function fakePi({ respond = () => ({}), active = null, settings = { autoOpen: "working" }, nativeShown = true, locale = "en" } = {}) {
   const invocations = [];
   const suggestions = [];
   const reveals = [];
+  const notifications = []; // { kind: "native" | "notice", title, body }
   const on = [];
   const off = [];
   const registered = [];
   const unregistered = [];
   const pi = {
-    invocations, suggestions, reveals, on, off, registered, unregistered,
+    invocations, suggestions, reveals, notifications, on, off, registered, unregistered,
     respond,
     desktop: {
       invoke: async (request) => {
@@ -65,7 +66,12 @@ function fakePi({ respond = () => ({}), active = null, settings = { autoOpen: "w
     },
     session: { getActive: async () => active },
     composer: { suggest: async (s) => { suggestions.push(s); return { ok: true }; } },
-    ui: { revealView: async (v) => { reveals.push(v); } },
+    ui: {
+      revealView: async (v) => { reveals.push(v); },
+      showNativeNotification: async (n) => { if (nativeShown) notifications.push({ kind: "native", ...n }); return { shown: nativeShown, permission: nativeShown ? "granted" : "denied" }; },
+      notify: async (n) => { notifications.push({ kind: "notice", ...n }); },
+    },
+    app: { getLocale: async () => locale },
     plugin: { getSettings: async () => settings },
     commands: {
       register: async (c) => { registered.push(c); },
