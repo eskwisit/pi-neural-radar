@@ -651,7 +651,13 @@ const NOTE = {
   zh: { question: "{title} 有问题要问你", reply: "{title} 正在等待你的回复", plan: "{title}：计划等待批准", goal: "{title}：目标等待批准", untitled: "未命名会话" },
 };
 
-/** Tell the user an agent needs them: a system notification, else an in-app notice. */
+/**
+ * Tell the user an agent needs them: a system notification and an in-app notice.
+ * The in-app notice always goes out: a system notification can report "shown" and still never
+ * appear (notifications off or never allowed for PI-Desktop, Focus mode), and it is easy to miss
+ * while you work in PI-Desktop. Each attempt is logged (plugin.stdio in the plugin log), because
+ * the host does not log notification calls.
+ */
 async function notifyNeed(agent) {
   if (!notifyOn) return;
   const lang = await Promise.resolve(pi.app?.getLocale?.()).catch(() => "");
@@ -659,13 +665,21 @@ async function notifyNeed(agent) {
   const kind = agent.question ? "question" : agent.reply ? "reply" : agent.plan?.kind === "goal" ? "goal" : "plan";
   const title = L[kind].replace("{title}", clipText(agent.title || L.untitled, 60));
   const body = clipText(str(agent.question?.q || agent.reply || agent.plan?.title || agent.plan?.question || agent.desc).replace(/\s+/g, " ").trim(), 180);
+  let system;
   try {
-    const shown = await pi.ui.showNativeNotification({ title, body });
-    if (shown?.shown) return;
-  } catch {
-    /* no system notification: fall back to the in-app notice */
+    const r = await pi.ui.showNativeNotification({ title, body });
+    system = r?.shown ? "shown" : `not shown (${str(r?.permission) || "unknown"})`;
+  } catch (error) {
+    system = `failed (${str(error?.code || error?.message) || "error"})`;
   }
-  try { await pi.ui.notify({ title, body }); } catch { /* nothing more to try */ }
+  let notice;
+  try {
+    await pi.ui.notify({ title, body });
+    notice = "shown";
+  } catch (error) {
+    notice = `failed (${str(error?.code || error?.message) || "error"})`;
+  }
+  try { console.log(`notify ${kind} for session ${agent.id}: system ${system}, in-app ${notice}`); } catch { /* logging is best-effort */ }
 }
 
 function maybeReveal({ becameRunning, newSubagent, needsYouNow }) {
