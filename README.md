@@ -16,7 +16,7 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   your latest prompt that names a topic, so it follows the session when it changes subject (short
   go-aheads like "ok" or "build it" are skipped). The second line is its state, then one live
   detail, the tokens its own tool calls added to its context (an estimate from their size), and
-  how long ago it last did something, e.g. `Working · Edit index.html · 12.4K tool ctx · 12s ago`.
+  how long ago it last did something, e.g. `Working · Edit index.html · 12.4K tokens · 12s ago`.
   The detail is the question or plan waiting for you, the running subagent and its task, or the
   tool in use and its target. The hovered agent's tooltip, and then the open one's, are drawn on top. An agent that
   a session started reads as its role (`explorer`, `fixer`, …) with the task it was given.
