@@ -102,8 +102,9 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 
 `desktop.control` is a high-risk permission: it lets the plugin act on your sessions. The plugin only
 acts on a session when you click a button in the drawer; everything else it does is read-only,
-apart from opening its own view as set in **Open the radar automatically**. It has no network
-access and stores nothing besides its settings.
+apart from opening its own view as set in **Open the radar automatically**. Its only network and
+file access is for your picture (see [Your picture](#your-picture)); it stores nothing besides its
+settings and that picture's cache.
 
 ### What it can and cannot do
 
@@ -116,15 +117,20 @@ It **can**:
   shown in the drawer, or stop or abort an agent. Stop and Abort need a second click within 3 seconds
 - open its own view in the work panel when an agent starts working or needs you (setting
   **Open the radar automatically**, which can be turned off)
+- read the image file, or download the https image or Gravatar, that you set as your picture,
+  once, and cache it in its data folder; clearing the setting removes the cache
 
 It **cannot** and does not:
 
-- access the network, so nothing it reads leaves your computer
-- read or write files, run programs or load code
+- access the network or read files, except for your picture (see above): nothing it reads from
+  your sessions leaves your computer
+- write files, except the cached picture (`avatar.json` in its data folder), run programs or load
+  code
 - act on a session without your click, answer an agent's mid-turn question cards or tool
   permission prompts, or change a session's permission mode (approving a plan keeps the session's
-  own mode, or uses "ask")
-- store anything besides its setting
+  own mode, or uses "ask"). A message you send to a busy agent waits in a queue and goes out when
+  its turn ends
+- store anything besides its settings and the cached picture
 
 Details for reviewers, including every host operation it calls, are in
 [docs/security-review.md](docs/security-review.md).
