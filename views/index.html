@@ -502,11 +502,23 @@ function sync(model) {
 // the page is shown when it has a size; hidden, it only keeps the state roughly current
 const shown = () => innerWidth > 0 && innerHeight > 0;
 let pullTimer = 0, pullSlow = false, pulling = false;
+// The host keeps this page running when the plugin is updated, while main.js is loaded fresh.
+// The first version main.js reports is the one this page came with; when it changes, the page
+// reloads to pick up the new files (not while you type a message, so your draft is kept).
+let mainVersion = null;
+function reloadOnUpdate(version) {
+  if (typeof version !== 'string' || !version) return false;
+  if (mainVersion === null) mainVersion = version;
+  if (version === mainVersion || document.activeElement?.id === 'draft') return false;
+  location.reload();
+  return true;
+}
 async function pull() {
   if (pulling) return;
   pulling = true;
   try {
     const r = await window.pluginBridge.invoke('radar.state', {});
+    if (r && r.ok && reloadOnUpdate(r.version)) return;
     if (r && r.ok) { connected = true; sync(r.model); void syncMe(r.me); } else connected = false;
   } catch { connected = false; }
   pulling = false;

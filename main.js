@@ -57,6 +57,11 @@ async function op(operation, args = [], confirm = false) {
   return pi.desktop.invoke({ operation, args, ...(confirm ? { confirm: true } : {}) });
 }
 const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+// the version this main.js was shipped with; the view reloads itself when it changes (an update
+// loads a fresh main.js, but the host keeps an open view's old page running)
+const VERSION = (() => {
+  try { return str(JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "manifest.json"), "utf8")).version); } catch { return ""; }
+})();
 const arr = (v) => (Array.isArray(v) ? v : []);
 const ts = (v) => (typeof v === "number" ? v : v ? Date.parse(v) || 0 : 0);
 const num = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
@@ -850,8 +855,9 @@ function settle(id, patch) {
 
 async function onPanelInvoke(channel, payload) {
   try {
-    // the state only carries the picture's key; the view asks for the picture when the key changes
-    if (channel === "radar.state") return { ok: true, model, me: { key: me.key } };
+    // the state only carries the picture's key; the view asks for the picture when the key changes.
+    // `version` lets a view left open across an update see that main.js changed and reload itself.
+    if (channel === "radar.state") return { ok: true, model, me: { key: me.key }, version: VERSION };
     if (channel === "radar.me") { await avatarJob; return { ok: true, ...me }; }
     if (channel === "radar.action") {
       const result = await act(payload ?? {});
