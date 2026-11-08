@@ -21,7 +21,8 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   go-aheads like "ok" or "build it" are skipped). The second line is its state, the number of
   subagents running for it (when there are any), the tokens its own tool calls added to its context
   (an estimate from their size), and how long ago it last did something, e.g.
-  `Working · 2 subagents · 12.4K tokens · 12s ago`. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent's tooltip
+  `Working · 2 subagents · 12.4K tokens · 12s ago`. The tooltip of an agent that needs you fades
+  to a fully opaque background, and back once it no longer waits. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent's tooltip
   shows only while its agent's cluster is open in the drawer, and reads as its role (`explorer`,
   `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
@@ -55,17 +56,11 @@ Turn it off with **Notify me when an agent needs me** (Plugins → Neural Radar 
 
 ## Your picture
 
-You are a 36 px circle with a 3 px white border, without a label; it is not clickable. Set the
-picture in Plugins → Neural Radar → Settings:
-
-- **Your picture in the radar**: the full path of an image file (PNG, JPEG, GIF or WebP, up to
-  2 MB; `~/` works) or an https image URL.
-- **Gravatar email**: used when no picture is set.
-
-The picture is read or downloaded once and cached in the plugin's data folder (`avatar.json`), so
-it survives restarts and needs no network afterwards; changing the setting replaces it. Clear the
-setting to remove the picture and its cache. With no picture (or an address without a Gravatar),
-the circle shows a glowing neuron core.
+You are a 36 px circle with a 3 px white border, without a label. **Click your circle** to pick
+a picture (PNG, JPEG, GIF or WebP): its middle square is cut out, shrunk to 128 px and kept in the
+plugin's data folder (`avatar.json`), so it survives restarts. Click again to pick another one;
+**right-click your circle** to remove the picture and its file. With no picture, the circle shows a
+glowing neuron core.
 
 ## Stepping in
 
@@ -102,9 +97,9 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 
 `desktop.control` is a high-risk permission: it lets the plugin act on your sessions. The plugin only
 acts on a session when you click a button in the drawer; everything else it does is read-only,
-apart from opening its own view as set in **Open the radar automatically**. Its only network and
-file access is for your picture (see [Your picture](#your-picture)); it stores nothing besides its
-settings and that picture's cache.
+apart from opening its own view as set in **Open the radar automatically**. It has no network
+access; the only file it writes is your picture (see [Your picture](#your-picture)), and it stores
+nothing besides its settings and that picture.
 
 ### What it can and cannot do
 
@@ -117,20 +112,20 @@ It **can**:
   shown in the drawer, or stop or abort an agent. Stop and Abort need a second click within 3 seconds
 - open its own view in the work panel when an agent starts working or needs you (setting
   **Open the radar automatically**, which can be turned off)
-- read the image file, or download the https image or Gravatar, that you set as your picture,
-  once, and cache it in its data folder; clearing the setting removes the cache
+- save the picture you pick by clicking your circle in its data folder; right-clicking your
+  circle removes it
 
 It **cannot** and does not:
 
-- access the network or read files, except for your picture (see above): nothing it reads from
-  your sessions leaves your computer
-- write files, except the cached picture (`avatar.json` in its data folder), run programs or load
+- access the network or read files other than its own picture file: nothing it reads from your
+  sessions leaves your computer
+- write files, except your picture (`avatar.json` in its data folder), run programs or load
   code
 - act on a session without your click, answer an agent's mid-turn question cards or tool
   permission prompts, or change a session's permission mode (approving a plan keeps the session's
   own mode, or uses "ask"). A message you send to a busy agent waits in a queue and goes out when
   its turn ends
-- store anything besides its settings and the cached picture
+- store anything besides its settings and your picture
 
 Details for reviewers, including every host operation it calls, are in
 [docs/security-review.md](docs/security-review.md).
@@ -157,6 +152,10 @@ Details for reviewers, including every host operation it calls, are in
 - The radar polls (every 2 s while an agent runs, every 6 s otherwise) because the host sends
   plugins no "turn started" event. The view refreshes every second while shown and every 5 s
   while the work panel hides it.
+- **Updates.** PI-Desktop loads the updated plugin at once, but keeps an open radar view's old page
+  running. The view sees the new version in the plugin's state and reloads itself (it waits
+  while you type a message in the drawer). This works from 0.35.0 on: the update *to* 0.35.0
+  still needs the radar view closed (disable and enable the plugin) or PI-Desktop restarted.
 
 ## Development
 
