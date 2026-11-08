@@ -9,12 +9,12 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   the centre is not clickable.
 - **Every agent has its own cluster**, also when it is the only one on the radar: you → agent →
   subagents.
-- **Every main agent has its own cluster.** As in the session's chat (*Main agent → delegated
-  tasks*), each run of the agent's own work after your message or after its text is one main agent
-  with the subagents it started. When a session has 2 or more main agents with subagents on the
-  radar, each main agent gets its own cluster next to its session, with a link to it, and its
-  subagents fan around it. Its drawer shows what it said before it started them, its subagents and
-  its activity. To send a message to it or stop it, open the session.
+- **Subagents stay with their main agent.** Each turn (your message and everything the agent does
+  after it, its short notes between tool calls included) is one main agent. The subagents of the
+  latest turn fan around the session's own cluster. When subagents of an earlier turn still run,
+  that turn gets its own main-agent cluster next to its session, with a link to it, and its
+  subagents fan around it. Its drawer shows your message of that turn, its subagents and its
+  activity. To send a message to it or stop it, open the session.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
 - **Every agent shows its tooltip.** The first line is what it works on now: the first line of
