@@ -168,10 +168,8 @@ const COPY = {
     nothingYet: 'Nothing yet',
     close: 'Close',
     log_you: 'You: {text}',
-    log_launch: 'Launched {agent}: {text}',
     log_ask: 'Asked you a question',
-    log_tool: 'Used {tool}',
-    log_toolRunning: 'Used {tool} …',
+    log_askText: 'Asked you: {text}',
     ago: '{d} ago',
     dur_s: '{n}s', dur_m: '{n}m', dur_h: '{n}h', dur_d: '{n}d',
     emptyConnecting: 'Waiting for the Neural Radar plugin…',
@@ -246,10 +244,8 @@ const COPY = {
     nothingYet: '暂无记录',
     close: '关闭',
     log_you: '你：{text}',
-    log_launch: '启动了 {agent}：{text}',
     log_ask: '向你提了一个问题',
-    log_tool: '使用了 {tool}',
-    log_toolRunning: '正在使用 {tool}…',
+    log_askText: '问你：{text}',
     ago: '{d}前',
     dur_s: '{n}秒', dur_m: '{n}分钟', dur_h: '{n}小时', dur_d: '{n}天',
     emptyConnecting: '正在等待神经雷达插件…',
@@ -281,7 +277,7 @@ const taskOf = a => a.task || a.title || t('untitledSession');
 const compactNum = n => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 // how long since the agent last did something: 12s, 4m, 2h, 3d
 function ageOf(a) {
-  let at = a.log?.[0]?.t || 0;
+  let at = Math.max(a.log?.[0]?.t || 0, a.lastCall?.t || 0);
   if (!at) return '';
   if (at < 1e12) at *= 1000; // seconds, not milliseconds
   const s = Math.max(0, (Date.now() - at) / 1000);
@@ -298,7 +294,7 @@ function tipLine(a) {
   else if (p) fact = p.title || t(p.kind === 'goal' ? 'goalReady' : 'planReady');
   else if (a.status === 'run' && running.length === 1) fact = `${running[0].role || t('subagent')}: ${running[0].description || ''}`.replace(/: $/, '');
   else if (a.status === 'run' && running.length > 1) fact = plural(running.length, 'subagentsOne', 'subagentsMany');
-  else if (a.status === 'run') { const l = a.log?.find(x => x.kind === 'tool'); if (l) fact = [l.tool, l.target].filter(Boolean).join(' '); }
+  else if (a.status === 'run' && a.lastCall) fact = [a.lastCall.tool, a.lastCall.target].filter(Boolean).join(' ');
   // what the agent's own tool calls put into its context, in every state
   const ctxTok = a.toolTokens > 0 ? t('toolCtxShort', { n: compactNum(a.toolTokens) }) : '';
   const age = ageOf(a);
@@ -312,9 +308,7 @@ function tipLine(a) {
 function logLine(l) {
   switch (l.kind) {
     case 'you': return t('log_you', { text: l.text || '' });
-    case 'launch': return t('log_launch', { agent: l.agent || t('subagent'), text: l.text || '' });
-    case 'ask': return t('log_ask');
-    case 'tool': return t(l.running ? 'log_toolRunning' : 'log_tool', { tool: [l.tool, l.target].filter(Boolean).join(' ') });
+    case 'ask': return l.text ? t('log_askText', { text: l.text }) : t('log_ask');
     default: return String(l.text || '');
   }
 }
@@ -471,7 +465,7 @@ function sync(model) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id, m.parent); agents.push(a); }
-    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [],
+    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, effort: m.effort || '', toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [], lastCall: m.lastCall || null,
       session: m.session || m.id, parent: m.parent || null, child: !!m.child, tokens: m.tokens || 0 });
     if (m.child && !m.title) a.title = t('mainAgent');
     a.target = attentionFor(m.status);

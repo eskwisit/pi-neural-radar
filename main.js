@@ -343,6 +343,7 @@ function mainAgent(sessionId, key, subs, messages, model, active) {
     plan: null,
     subs,
     log: activityLog(own),
+    lastCall: lastToolCall(own),
   };
 }
 
@@ -478,26 +479,36 @@ function lastUserText(messages) {
 }
 
 /**
- * Language-neutral activity entries; the view words them in the user's language:
- *   { t, kind: "you", text }            your message
- *   { t, kind: "say", text }            the agent's message
- *   { t, kind: "launch", agent, text }  a subagent launch (agent "" = unnamed), text = its task
- *   { t, kind: "ask" }                  the agent asked you a question
- *   { t, kind: "tool", tool, target, running }  a tool call; target is a file, command, pattern or host ("" if none)
+ * The Activity list: the text of the chat session, newest first, worded by the view:
+ *   { t, kind: "you", text }  your message
+ *   { t, kind: "say", text }  the agent's message
+ *   { t, kind: "ask", text }  a question the agent asked you (asktool)
+ * Subagents' own messages, tool calls and commands are left out; `lastToolCall` gives the newest
+ * tool call to the tooltip.
  */
 function activityLog(messages) {
   const out = [];
-  for (const m of messages.slice(-14)) {
+  const line = (m) => textOf(m).replace(/\s+/g, " ").slice(0, 140);
+  for (const m of messages) {
+    if (parentCallOf(m)) continue; // a subagent's own messages are not part of the chat
     const at = ts(m?.createdAt ?? m?.created_at);
-    if (m?.role === "user") out.push({ t: at, kind: "you", text: textOf(m).slice(0, 140) });
-    else if (m?.role === "assistant" && textOf(m)) out.push({ t: at, kind: "say", text: textOf(m).replace(/\s+/g, " ").slice(0, 140) });
+    if (m?.role === "user" && textOf(m)) out.push({ t: at, kind: "you", text: line(m) });
+    else if (m?.role === "assistant" && !m.toolName && textOf(m)) out.push({ t: at, kind: "say", text: line(m) });
     for (const b of blocksOf(m)) {
-      if (b?.name === "Task") out.push({ t: at, kind: "launch", agent: str(b.args?.agent), text: str(b.args?.description).slice(0, 90) });
-      else if (b?.name === "asktool") out.push({ t: at, kind: "ask" });
-      else if (b?.name && b?.type !== "text") out.push({ t: at, kind: "tool", tool: str(b.name), target: toolTarget(b.args ?? b.input), running: !b.completedAt });
+      if (b?.name === "asktool") out.push({ t: at, kind: "ask", text: str(arr(b.args?.questions)[0]?.question).replace(/\s+/g, " ").slice(0, 140) });
     }
   }
   return out.slice(-12).reverse();
+}
+
+/** The newest tool call in the transcript, for the tooltip: { t, tool, target, running } or null. */
+function lastToolCall(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const b = blocksOf(m).filter((x) => x?.name && x?.type !== "text" && x.name !== "Task" && x.name !== "asktool").pop();
+    if (b) return { t: ts(m?.createdAt ?? m?.created_at), tool: str(b.name), target: toolTarget(b.args ?? b.input), running: !b.completedAt };
+  }
+  return null;
 }
 
 /**
@@ -616,6 +627,7 @@ async function poll() {
       plan,
       subs,
       log: activityLog(messages),
+      lastCall: lastToolCall(messages),
     };
     // two or more main agents (see groupsOf) each get their own cluster with their own subagents;
     // with one, its subagents stay around the session's cluster
