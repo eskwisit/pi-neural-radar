@@ -877,9 +877,10 @@ function draw(time) {
   agentLabels.forEach((l, i) => { l.a.label.z = i; }); // draw order, so a click hits the tooltip on top
 
   // 1) subagents (bottom): role and what they were asked to do; finished ones first, so the
-  //    working ones always paint over them
+  //    working ones always paint over them. A subagent's tooltip shows only while its agent's
+  //    cluster is open in the drawer; its size is still measured so the layout stays put.
   for (const done of [true, false]) for (const a of agents) {
-    const focused = focus === a;
+    const focused = focus === a, open = selected === a.id;
     for (const s of a.subs) {
       if ((s.status !== 'run') !== done) continue;
       const off = s.status !== 'run';
@@ -887,9 +888,10 @@ function draw(time) {
       ctx.font = '600 10px ui-sans-serif, system-ui'; const w1 = ctx.measureText(role).width;
       ctx.font = '9.5px ui-sans-serif, system-ui'; const w2 = d ? ctx.measureText(d).width : 0;
       const sw = Math.max(w1, w2) + 14, sh = d ? 30 : 17, sx = s.x - sw / 2, sy = s.y + 20 * K;
+      s.label = { x: sx, y: sy, w: sw, h: sh, shown: open };
+      if (!open) continue;
       const alpha = (off ? 0.55 : 0.9) * (focused ? 1 : 0.85);
       pill(sx, sy, sw, sh, alpha, focused && selectedSub === s.id ? 'rgba(255,255,255,0.45)' : null);
-      s.label = { x: sx, y: sy, w: sw, h: sh };
       ctx.textAlign = 'center'; ctx.globalAlpha = alpha;
       ctx.font = '600 10px ui-sans-serif, system-ui'; ctx.fillStyle = ST[s.status] || '#d2d2dc';
       ctx.fillText(role, s.x, sy + 12);
@@ -965,7 +967,7 @@ function hitTest(x, y) {
   const onLabel = agents.filter(a => inRect(a.label)).sort((p, q) => q.label.z - p.label.z)[0];
   if (onLabel) return { a: onLabel };
   for (const a of order) if (Math.hypot(x - a.x, y - a.y) < 42 * K) return { a };
-  for (const a of order) for (const s of a.subs) if (Math.hypot(x - s.x, y - s.y) < 20 * K || inRect(s.label)) return { a, s };
+  for (const a of order) for (const s of a.subs) if (Math.hypot(x - s.x, y - s.y) < 20 * K || (s.label?.shown && inRect(s.label))) return { a, s };
   return null;
 }
 canvas.addEventListener('mousemove', e => {
