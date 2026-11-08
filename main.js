@@ -47,6 +47,9 @@ let lastReveal = 0;
 let firstPoll = true;
 let inFlight = false;
 let rerun = false;
+const outbox = new Map(); // sessionId → [{ id, text, t }]: messages waiting for the turn to end
+let outboxSeq = 0;
+let events = []; // recent deliveries of queued messages, for the view: { id, kind, sessionId, text, t }
 
 // ---------- host helpers ----------
 async function op(operation, args = [], confirm = false) {
@@ -557,7 +560,7 @@ async function poll() {
   }
   for (const s of sessionList) {
     const m = memory.get(s.id);
-    const keep = s.id === activeSessionId || m?.running || m?.attention || pendingPlans.has(s.id);
+    const keep = s.id === activeSessionId || m?.running || m?.attention || pendingPlans.has(s.id) || outbox.has(s.id);
     if (keep && !candidates.some((c) => c.id === s.id)) candidates.push(s);
   }
 
@@ -565,7 +568,9 @@ async function poll() {
   const agents = [];
   for (const s of candidates) {
     const status = (await op("agent/getStatus", [s.id]).catch(() => null))?.status ?? {};
-    const running = status.isRunning === true;
+    let running = status.isRunning === true;
+    // the turn is over: the next queued message goes out now and starts the next one
+    if (!running && outbox.get(s.id)?.length) running = await deliverQueued(s.id);
     const isActive = s.id === activeSessionId;
     const mem = memory.get(s.id) ?? { running: false, subCount: 0, attention: "", lastActive: 0 };
     if (running) mem.lastActive = now;
@@ -658,10 +663,10 @@ async function poll() {
   }
 
   firstPoll = false;
-  model = { agents, error: null };
-  // poll fast only while an agent is actually running; one waiting for you is picked up by
-  // the turnEnded / activated events (and the slow poll) as soon as you act
-  return agents.some((a) => a.status === "run");
+  model = { agents: withQueues(agents), error: null, events };
+  // poll fast only while an agent is actually running (or a message waits for it); one waiting
+  // for you is picked up by the turnEnded / activated events (and the slow poll) as soon as you act
+  return agents.some((a) => a.status === "run") || outbox.size > 0;
 }
 
 // what a notification says, in the user's language
@@ -748,10 +753,18 @@ async function act({ action, sessionId, text, proposal, decision }) {
     case "send": {
       const t = str(text).trim();
       if (!t) return { ok: false, message: "empty message" };
-      await op("agent/prompt", [{ sessionId: id, content: t }]);
+      // a running agent cannot take a new turn (the host answers AGENT_BUSY): the message waits
+      // here and goes out when the turn ends; one already waiting keeps its place in the line
+      if (memory.get(id)?.running || outbox.get(id)?.length) return enqueue(id, t);
+      try {
+        await op("agent/prompt", [{ sessionId: id, content: t }]);
+      } catch (error) {
+        if (isBusyError(error)) return enqueue(id, t);
+        throw error;
+      }
       // your reply answers the agent's question: it is working again, not waiting for you
       settle(id, { reply: null, status: "run" });
-      return { ok: true };
+      return { ok: true, delivery: "sent" };
     }
     case "plan": {
       const p = proposal ?? {};
@@ -780,6 +793,52 @@ async function act({ action, sessionId, text, proposal, decision }) {
 }
 
 const PERMISSION_MODES = ["ask", "accept-edits", "auto"];
+
+// ---------- messages waiting for the agent's turn to end ----------
+const OUTBOX_MAX = 20; // per session
+const EVENTS_MAX = 20;
+/** The host refuses a new turn while one runs: AGENT_BUSY, or its message. */
+const isBusyError = (e) => [e?.code, e?.errorCode, e?.data?.errorCode].includes("AGENT_BUSY") || /AGENT_BUSY|already has an active turn/i.test(str(e?.message));
+
+function enqueue(id, text) {
+  const q = outbox.get(id) ?? [];
+  if (q.length >= OUTBOX_MAX) return { ok: false, code: "queue_full", message: "Too many queued messages" };
+  q.push({ id: `q${++outboxSeq}`, text, t: Date.now() });
+  outbox.set(id, q);
+  publishQueues();
+  return { ok: true, delivery: "queued", position: q.length };
+}
+
+/** Send the oldest queued message of an idle session. True when the agent took it. */
+async function deliverQueued(id) {
+  const q = outbox.get(id);
+  const item = q?.[0];
+  if (!item) return false;
+  let sent = false;
+  try {
+    await op("agent/prompt", [{ sessionId: id, content: item.text }]);
+    q.shift();
+    sent = true;
+    pushEvent({ kind: "delivered", sessionId: id, text: item.text });
+  } catch (error) {
+    if (isBusyError(error)) return false; // the turn is not over after all: try again later
+    q.shift();
+    pushEvent({ kind: "failed", sessionId: id, text: item.text, message: str(error?.message ?? error) });
+  }
+  if (!q.length) outbox.delete(id);
+  return sent;
+}
+
+function pushEvent(e) {
+  events = [...events, { id: `e${++outboxSeq}`, t: Date.now(), ...e }].slice(-EVENTS_MAX);
+  model = { ...model, events };
+}
+
+/** Show each session's queued messages on its agent, at once. */
+function publishQueues() {
+  model = { ...model, agents: withQueues(model.agents), events };
+}
+const withQueues = (agents) => agents.map((a) => (a.child ? a : { ...a, queued: (outbox.get(a.id) ?? []).map((x) => ({ ...x })) }));
 
 /** Reflect an action in the model at once; the next poll confirms it. */
 function settle(id, patch) {
