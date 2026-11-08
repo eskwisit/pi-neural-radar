@@ -290,6 +290,26 @@ describe("activityLog (structure only; its wording is localized)", { skip: typeo
   it("survives malformed messages", () => {
     assert.ok(Array.isArray(t.activityLog([null, {}, { role: "tool", toolName: "Bash" }])));
   });
+
+  it("lists the chat text, not tool calls or commands", () => {
+    const log = t.activityLog([
+      user("Fix the   tooltip", { createdAt: 1 }),
+      { role: "tool", toolName: "Bash", toolArgs: { command: "npm test" }, createdAt: 2 },
+      { role: "assistant", blocks: [{ type: "text", text: "Found it." }, { type: "toolCall", name: "Edit", args: { path: "a.js" } }], createdAt: 3 },
+      { role: "assistant", blocks: [{ type: "toolCall", name: "Task", args: { agent: "x", description: "do it" } }], createdAt: 4 },
+      { role: "assistant", blocks: [{ type: "toolCall", name: "asktool", args: { questions: [{ question: "Ship it?" }] } }], createdAt: 5 },
+      assistant("subagent notes", { createdAt: 6, parentToolCallId: "c1" }),
+    ]);
+    assert.deepEqual(log.map((l) => [l.kind, l.text]), [["ask", "Ship it?"], ["say", "Found it."], ["you", "Fix the tooltip"]]);
+  });
+
+  it("keeps the last 12 chat lines however many tool calls sit between them", () => {
+    const messages = [];
+    for (let i = 0; i < 20; i++) messages.push(assistant(`step ${i}`, { createdAt: i * 10 }), { role: "tool", toolName: "Read", toolArgs: { path: "f" }, createdAt: i * 10 + 1 });
+    const log = t.activityLog(messages);
+    assert.equal(log.length, 12);
+    assert.equal(log[0].text, "step 19");
+  });
 });
 
 describe("describeTask (what the agent works on now)", { skip: typeof t.describeTask !== "function" && "describeTask not present" }, () => {
@@ -316,9 +336,10 @@ describe("toolTarget", { skip: typeof t.toolTarget !== "function" && "toolTarget
     assert.equal(t.toolTarget('{"file_path":"/a/b.ts"}'), "b.ts");
     assert.equal(t.toolTarget(null), "");
   });
-  it("is attached to tool entries in the activity log", () => {
-    const log = t.activityLog([{ role: "tool", toolName: "Edit", toolArgs: { path: "/x/main.js" }, createdAt: 1 }]);
-    assert.equal(log[0].target, "main.js");
+  it("names the newest tool call for the tooltip", () => {
+    const call = t.lastToolCall([{ role: "tool", toolName: "Edit", toolArgs: { path: "/x/main.js" }, createdAt: 1 }]);
+    assert.equal(call.tool, "Edit");
+    assert.equal(call.target, "main.js");
   });
 });
 

@@ -13,7 +13,7 @@ const MAIN = path.join(__dirname, "..", "main.js");
 
 // internal names re-exported for the tests; a name that no longer exists comes back undefined
 const INTERNALS = [
-  "awaitingReply", "pendingQuestionFrom", "askingPart", "activityLog", "mergeSubs", "describeTask", "toolTarget", "toolTokens", "estimateTokens",
+  "awaitingReply", "pendingQuestionFrom", "askingPart", "activityLog", "lastToolCall", "mergeSubs", "describeTask", "toolTarget", "toolTokens", "estimateTokens",
   "delegationsFrom", "act", "onPanelInvoke", "onLoad", "onUnload", "poll", "loop", "pollSoon",
 ];
 
