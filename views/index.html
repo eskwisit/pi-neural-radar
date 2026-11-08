@@ -322,6 +322,7 @@ function logLine(l) {
 
 const ST = { need: '#ff6b9a', approve: '#ffc966', run: '#5eead4', paused: '#8a8f9c', done: '#6b7080', stopped: '#6b7080' };
 const YOU_SIGNAL = '#d8c8ff';
+const TIP_BG = 0.82; // tooltip background opacity; it fades to 1 while the agent needs you
 const HANDOFF = '#8fb8ff'; // agent hands a task to a subagent
 
 const canvas = document.getElementById('c');
@@ -670,6 +671,9 @@ function update(dt, t) {
     a.x = lerp(a.x, targets[i][0], Math.min(1, dt * 1.8));
     a.y = lerp(a.y, targets[i][1], Math.min(1, dt * 1.8));
     a.flash = Math.max(0, a.flash - dt * 1.8);
+    // an agent that needs you gets a fully opaque tooltip; the background fades in and out
+    const tipTo = a.status === 'need' || a.status === 'approve' ? 1 : TIP_BG;
+    a.tipBg = (a.tipBg ?? TIP_BG) + (tipTo - (a.tipBg ?? TIP_BG)) * Math.min(1, dt * 3);
     const away = Math.atan2(a.y - you.y, a.x - you.x), n = a.subs.length;
     a.subs.forEach((s, k) => {
       const grow = Math.min(1, (now() - s.born) * 1.2);
@@ -861,9 +865,9 @@ function draw(time) {
 
   // labels sit on small dark pills so they read over the mesh
   ctx.textBaseline = 'alphabetic';
-  const pill = (x, y, w, h, alpha = 1, accent = null) => {
+  const pill = (x, y, w, h, alpha = 1, accent = null, bg = TIP_BG) => {
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = 'rgba(12,12,18,0.82)'; ctx.strokeStyle = accent || 'rgba(255,255,255,0.09)'; ctx.lineWidth = 1;
+    ctx.fillStyle = `rgba(12,12,18,${bg.toFixed(3)})`; ctx.strokeStyle = accent || 'rgba(255,255,255,0.09)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(x, y, w, h, 7); ctx.fill(); ctx.stroke();
     ctx.globalAlpha = 1;
   };
@@ -916,7 +920,7 @@ function draw(time) {
   for (const a of agents) redrawCluster(a);
   for (const { a, stat, detail, desc, px, py, pw, ph } of agentLabels) {
     const open = selected === a.id;
-    pill(px, py, pw, ph, 1, open ? 'rgba(255,255,255,0.45)' : (a.status === 'need' || a.status === 'approve') ? ST[a.status] + '66' : null);
+    pill(px, py, pw, ph, 1, open ? 'rgba(255,255,255,0.45)' : (a.status === 'need' || a.status === 'approve') ? ST[a.status] + '66' : null, a.tipBg ?? TIP_BG);
     ctx.textAlign = 'left';
     ctx.font = '600 11.5px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.94)';
     ctx.fillText(desc, px + 10, a.y - 1);
