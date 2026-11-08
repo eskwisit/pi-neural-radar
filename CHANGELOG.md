@@ -1,30 +1,20 @@
 # Changelog
 
-## 0.34.0
+## 0.37.0
 
 ### Features
 
-- **main:** queue messages to a busy agent and send them when its turn ends (`ab2b183`)
-- **view:** show queued messages and when each one is sent (`2cb0ed5`)
-- show you as a circle with your picture or Gravatar from the settings (`9113b3d`)
-
-### Fixes
-
-- **main:** keep each subagent in the cluster of the turn that started it (`119fc8f`)
-- **view:** show only the model and its effort level in the drawer (`4433cb8`)
+- reload an open radar view when the plugin is updated (`be80f64`)
+- **view:** fade the tooltip of an agent that needs you to fully opaque (`f847df6`)
+- pick your picture by clicking your circle instead of in the settings (`7b76cbe`)
 
 ### Documentation
 
-- **readme:** describe one main agent per turn and its subagents (`d25485e`)
-- **readme:** describe the model and effort line in the drawer (`82ea26f`)
-- **readme:** explain how messages to a busy agent are queued (`0cce9ef`)
-- **readme:** describe your picture, its settings and its cache (`a75cbbc`)
-- **manifest:** state the picture's file and network access in the safety notes (`d40935b`)
-- **readme:** list the picture's file and network access in permissions (`80bb031`)
-- update the security review for the picture and the message queue (`7f2e43f`)
+- **manifest:** state that the plugin no longer uses the network (`139605b`)
+- **readme:** describe the picture click, the tooltip fade and updates (`eca1859`)
+- update the security review for the picture picker and the reload (`9eaf90f`)
+- name 0.37.0 as the first release without network and with reload (`ae61201`)
 
 ### Tests
 
-- **tests:** cover subagents staying in the cluster of their turn (`d4b1103`)
-- **tests:** cover the queue of messages to a busy agent (`53e01fa`)
-- **tests:** cover your picture, its cache and its removal (`26478f7`)
+- **tests:** cover the picked picture, its removal and the version in the state (`be983cd`)

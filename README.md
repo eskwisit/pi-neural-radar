@@ -154,7 +154,7 @@ Details for reviewers, including every host operation it calls, are in
   while the work panel hides it.
 - **Updates.** PI-Desktop loads the updated plugin at once, but keeps an open radar view's old page
   running. The view sees the new version in the plugin's state and reloads itself (it waits
-  while you type a message in the drawer). This works from 0.35.0 on: the update *to* 0.35.0
+  while you type a message in the drawer). This works from 0.37.0 on: the update *to* 0.37.0
   still needs the radar view closed (disable and enable the plugin) or PI-Desktop restarted.
 
 ## Development
