@@ -19,11 +19,6 @@
     font: 13px/1.45 ui-sans-serif, -apple-system, "SF Pro Text", Inter, system-ui, sans-serif; overflow: hidden; }
   canvas { position: fixed; inset: 0; display: block; }
 
-  .topbar { position: fixed; top: 18px; left: 22px; right: 22px; display: flex; align-items: center; gap: 12px; pointer-events: none; z-index: 3; }
-  .queue { display: flex; gap: 6px; pointer-events: auto; margin-left: auto; }
-  .chip { white-space: nowrap; display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px;
-    background: var(--panel); border: 1px solid var(--line); cursor: pointer; color: var(--text); font: inherit; font-size: 12px; }
-  .chip:hover { border-color: rgba(255,255,255,.22); }
   .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: currentColor; }
   .btn { font: inherit; font-size: 12px; color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--line);
     padding: 5px 10px; border-radius: 7px; cursor: pointer; }
@@ -95,18 +90,12 @@
   .btn.confirm { border-color: rgba(255,107,154,.6); color: #ffb3c8; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   @media (max-width: 760px) {
-    .topbar { left: 12px; right: 12px; top: 10px; flex-wrap: wrap; }
-    .queue { margin-left: 0; order: 3; width: 100%; overflow-x: auto; }
     .panel { left: 0; width: auto; top: 30%; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; transform: translateY(100%); }
   }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-
-<div class="topbar">
-  <div class="queue" id="queue"></div>
-</div>
 
 <div class="empty-state" id="emptyState"></div>
 
@@ -501,7 +490,7 @@ function sync(model) {
     agents.splice(i, 1);
   }
   lastError = model.error || null;
-  renderQueue(); renderEmpty();
+  renderEmpty();
   // the drawer is rebuilt only when its agent's data changed, so clicks are never lost
   const m = (model.agents || []).find(x => x.id === selected);
   const sig = m ? JSON.stringify(m) : '';
@@ -1029,7 +1018,6 @@ async function act(a, payload, color, done) {
 
 // ---------- DOM ----------
 const panel = document.getElementById('panel');
-const queueEl = document.getElementById('queue');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const clock = t => t ? new Date(t).toTimeString().slice(0, 8) : '';
 
@@ -1038,12 +1026,6 @@ function renderEmpty() {
   el.textContent = connected === false ? t('emptyConnecting')
     : lastError ? t('emptyError', { error: lastError })
     : '';
-}
-
-function renderQueue() {
-  const waiting = agents.filter(a => a.status === 'need' || a.status === 'approve').sort((a, b) => b.attention - a.attention);
-  queueEl.innerHTML = waiting.map(a => `<button class="chip" data-id="${esc(a.id)}"><span class="dot" style="color:${ST[a.status]}"></span>${esc(nameOf(a, 24))} · ${esc(clip(descOf(a), 32))}</button>`).join('');
-  queueEl.querySelectorAll('[data-id]').forEach(b => b.onclick = () => select(selected === b.dataset.id ? null : b.dataset.id));
 }
 
 const armed = new Map(); // two-step confirmation for Stop / Abort
@@ -1164,14 +1146,13 @@ function applyAppearance(appearance) {
   locale = next;
   document.documentElement.lang = locale;
   document.title = t('title');
-  if (changed) { renderQueue(); renderEmpty(); if (selected) renderPanel(); }
+  if (changed) { renderEmpty(); if (selected) renderPanel(); }
 }
 applyAppearance(null);
 window.pluginBridge?.on?.('appearance:changed', applyAppearance);
 Promise.resolve(window.pluginBridge?.invoke?.('app.getAppearance')).then(applyAppearance).catch(() => applyAppearance(null));
 
 resize();
-renderQueue();
 renderEmpty();
 requestAnimationFrame(frame);
 pull();
