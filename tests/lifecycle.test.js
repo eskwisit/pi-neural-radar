@@ -139,7 +139,28 @@ describe("poll: model", () => {
     }
     assert.equal(a.task, "Two parts. First the fix.");
     assert.equal(a.tokens, 40);
-    assert.deepEqual(b.log.map((l) => l.kind), ["launch", "say"]);
+    assert.deepEqual(b.log.map((l) => [l.kind, l.text]), [["say", "Now the docs."]]); // chat text only, no Task launch
+  });
+
+  it("carries the effort next to the model for the session, its main agents and its subagents", async () => {
+    const now = Date.now();
+    const messages = () => [
+      user("fix the bug and document it", { id: "u1", createdAt: now - 40e3 }),
+      assistant("First the fix.", { id: "m1", createdAt: now - 39e3 }),
+      { ...launch(now, "a1", "fixer", "fix the bug"), toolResult: { details: { delegationId: "a1", agent: "fixer", status: "running", modelId: "claude-opus-5-5", thinkingLevel: "high" } } },
+      assistant("Now the docs.", { id: "m2", createdAt: now - 20e3 }),
+      launch(now, "b1", "writer", "document it"),
+    ];
+    const sessions = [{ id: "s1", title: "Team", updatedAt: now, modelId: "gpt-5", thinkingLevel: "medium" }];
+    const { t } = fresh({ respond: host({ sessions, running: () => true, messages }) });
+    await t.poll();
+    const byId = new Map(t.model.agents.map((a) => [a.id, a]));
+    assert.deepEqual([...byId.values()].map((a) => [a.id, a.model, a.effort]), [
+      ["s1", "gpt-5", "medium"], ["s1::main:m1", "gpt-5", "medium"], ["s1::main:m2", "gpt-5", "medium"],
+    ]);
+    assert.deepEqual(byId.get("s1::main:m1").subs.map((s) => [s.id, s.model, s.effort]), [["a1", "claude-opus-5-5", "high"]]);
+    // a subagent whose launch reported neither keeps them empty
+    assert.deepEqual(byId.get("s1::main:m2").subs.map((s) => [s.id, s.model, s.effort]), [["b1", "", ""]]);
   });
 
   it("does not open the view on the first poll, then opens it when an agent starts working", async () => {
