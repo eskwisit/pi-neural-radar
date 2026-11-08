@@ -61,7 +61,7 @@ drawer is open, the radar slides so the agent and its subagents sit in the middl
 drawer leaves visible, however far they are from you.
 
 The top of the drawer stays put: the session name (on one line, cut short with "…" when it is long),
-your latest prompt, its state, its model with its effort (thinking level) and the actions below. Each
+your latest prompt, its state, its model and effort (thinking level), and the actions below. Each
 subagent in **Subagents** shows its model and effort when its launch reports them, and the tokens its transcript reports so far, marked `≥`: a lower bound, since
 the host does not record every model call of a subagent in the transcript.
 **Activity** lists the text of the chat session: your messages, the agent's replies and the questions it asked you; tool calls and commands are left out. **Subagents** and **Activity** fold
