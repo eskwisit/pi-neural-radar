@@ -4,9 +4,8 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
 
 ![Neural Radar: You at the centre with 3 agents waiting on you; an agent asking a question (its drawer open on the right, with the question and its answers), an agent waiting for your reply and a plan awaiting approval; a working agent with explorer, fixer and test-runner subagents and a working goal with ui-designer and code-reviewer; a finished agent fading at the edge; tooltips showing what each agent works on now, its state, the tool context and how long ago](docs/neural-radar.webp)
 
-- **You** sit at the centre. Each agent (a session) is a cluster of neurons; its subagents are the
-  small clusters behind it. The You label counts the agents waiting on you, or reads **Idle**, and
-  the centre is not clickable.
+- **You** sit at the centre, as a circle with your picture (see [Your picture](#your-picture)).
+  Each agent (a session) is a cluster of neurons; its subagents are the small clusters behind it.
 - **Every agent has its own cluster**, also when it is the only one on the radar: you → agent →
   subagents.
 - **Subagents stay with their main agent.** Each turn (your message and everything the agent does
@@ -53,6 +52,20 @@ or never allowed for PI-Desktop, Focus mode). Each attempt is written to the plu
 starts needing you, not one per poll, and none for agents that already waited when the radar
 started. Clicking the notification brings PI-Desktop to the front; it does not switch session.
 Turn it off with **Notify me when an agent needs me** (Plugins → Neural Radar → Settings).
+
+## Your picture
+
+You are a 36 px circle with a 3 px white border, without a label; it is not clickable. Set the
+picture in Plugins → Neural Radar → Settings:
+
+- **Your picture in the radar**: the full path of an image file (PNG, JPEG, GIF or WebP, up to
+  2 MB; `~/` works) or an https image URL.
+- **Gravatar email**: used when no picture is set.
+
+The picture is read or downloaded once and cached in the plugin's data folder (`avatar.json`), so
+it survives restarts and needs no network afterwards; changing the setting replaces it. Clear the
+setting to remove the picture and its cache. With no picture (or an address without a Gravatar),
+the circle shows a glowing neuron core.
 
 ## Stepping in
 
