@@ -72,7 +72,10 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
   your reply goes straight to it
 - **Approve / Reject** a Plan or Goal that is waiting for you. Approving runs it in the session's
   current permission mode
-- **Send to agent**: a message delivered to the running agent
+- **Send to agent** (⌘↵): an idle agent gets the message at once. A running agent cannot take a new
+  turn, so the message waits in a queue shown under the box and goes out when the turn ends, one per
+  turn. The drawer says whether it was sent or queued, and a notice tells you when a queued message
+  goes out. The queue lives in the plugin: it is lost when the plugin reloads
 - **Open session**, **Stop** (at the next safe point) and **Abort** (now); Stop and Abort ask for a
   second click
 
