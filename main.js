@@ -117,6 +117,7 @@ function sessionsFrom(listResult) {
       title: str(s.title ?? s.name),
       updatedAt: ts(s.updatedAt ?? s.updated_at ?? s.lastActivityAt),
       model: str(s.modelId ?? s.model_id ?? s.model),
+      effort: str(s.thinkingLevel ?? s.thinking_level),
       permissionMode: str(s.permissionMode ?? s.permission_mode),
     }))
     .filter((s) => s.id);
@@ -263,7 +264,7 @@ function delegationsFrom(messages) {
     if (typeof d === "string") d = { delegationId: d };
     const id = str(d?.delegationId);
     if (!id) return;
-    const prev = subs.get(id) ?? { id, role: "", description: "", status: "running" };
+    const prev = subs.get(id) ?? { id, role: "", description: "", status: "running", model: "", effort: "" };
     subs.set(id, {
       ...prev,
       role: str(d.agent) || prev.role,
@@ -271,6 +272,8 @@ function delegationsFrom(messages) {
       status: str(d.status) || prev.status,
       toolCalls: d.toolCalls ?? prev.toolCalls,
       lastTool: str(d.lastToolName) || prev.lastTool,
+      model: str(d.modelId) || prev.model,
+      effort: str(d.thinkingLevel) || prev.effort,
     });
   };
   // a subagent launched in an earlier turn still counts while it runs; finished ones only count
@@ -320,7 +323,7 @@ function delegationsFrom(messages) {
  * session has more than one: it gets its own cluster, wired to its session. Actions on it go to
  * that session (`session`).
  */
-function mainAgent(sessionId, key, subs, messages, model, active) {
+function mainAgent(sessionId, key, subs, messages, model, effort, active) {
   const groupAt = groupsOf(messages);
   const own = messages.filter((m, i) => groupAt[i]?.key === key);
   const said = str(subs.find((x) => x.groupText)?.groupText);
@@ -334,6 +337,7 @@ function mainAgent(sessionId, key, subs, messages, model, active) {
     task: said,
     status: subs.some((x) => x.status === "run") ? "run" : "done",
     model,
+    effort,
     toolTokens: 0,
     tokens: subs.reduce((n, x) => n + (x.tokens || 0), 0),
     active,
@@ -619,6 +623,7 @@ async function poll() {
       task: lastUserText(messages).slice(0, 220) || title,
       status: statusKey,
       model: str(status.modelId) || s.model,
+      effort: s.effort, // the session's thinking level ("effort"), from session/list
       toolTokens: toolTok,
       active: s.id === activeSessionId,
       question,
@@ -633,7 +638,7 @@ async function poll() {
     // with one, its subagents stay around the session's cluster
     const groups = [...new Set(subs.map((x) => x.group ?? ""))];
     const mains = groups.length > 1
-      ? groups.map((g) => mainAgent(s.id, g, subs.filter((x) => (x.group ?? "") === g), messages, agent.model, isActive))
+      ? groups.map((g) => mainAgent(s.id, g, subs.filter((x) => (x.group ?? "") === g), messages, agent.model, agent.effort, isActive))
       : [];
     if (mains.length) agent.subs = [];
     // a plainly finished agent only lingers for a while; one waiting for your reply stays

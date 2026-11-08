@@ -163,6 +163,7 @@ const COPY = {
     tokensOne: '{n} token',
     tokensMany: '{n} tokens',
     tokensAtLeast: '≥ {tokens}',
+    effort: 'effort {level}',
     toolCtxShort: '{n} tokens',
     tokensAtLeastHint: 'Tokens this subagent’s messages report in the transcript so far: a lower bound, since not every model call is recorded',
     nothingYet: 'Nothing yet',
@@ -239,6 +240,7 @@ const COPY = {
     tokensOne: '{n} 个 token',
     tokensMany: '{n} 个 token',
     tokensAtLeast: '≥ {tokens}',
+    effort: '思考强度 {level}',
     toolCtxShort: '{n} tokens',
     tokensAtLeastHint: '此子智能体的消息在对话记录中目前报告的 token：这是下限，并非每次模型调用都有记录',
     nothingYet: '暂无记录',
@@ -269,6 +271,8 @@ function t(key, vars) {
 const plural = (n, one, many) => t(n === 1 ? one : many, { n });
 // a subagent's token count, compact in the user's language (12.3k, 1.2万, …)
 const tokensText = n => n > 0 ? t(n === 1 ? 'tokensOne' : 'tokensMany', { n: compactNum(n) }) : '';
+// the model and, when known, its effort (thinking level): "claude-opus-5-5 · effort high"
+const modelLine = x => [x.model, x.effort && x.effort !== 'omit' ? t('effort', { level: x.effort }) : ''].filter(Boolean).join(' · ');
 const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s || ''));
 // an agent is named after its session, as in PI-Desktop's session list
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
@@ -474,7 +478,7 @@ function sync(model) {
       subSeen.add(ms.id);
       let s = a.subs.find(x => x.id === ms.id);
       if (!s) { s = mkSub(ms.id, ms.role); a.subs.push(s); }
-      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, toolCalls: ms.toolCalls, lastTool: ms.lastTool, tokens: ms.tokens || 0 });
+      Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, toolCalls: ms.toolCalls, lastTool: ms.lastTool, model: ms.model || '', effort: ms.effort || '', tokens: ms.tokens || 0 });
     }
     a.subs = a.subs.filter(s => subSeen.has(s.id));
   }
@@ -1044,7 +1048,7 @@ function renderPanel() {
     <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span></h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
-    <div class="meta" style="margin-top:10px"><span>${esc(a.model || '')}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    <div class="meta" style="margin-top:10px"><span>${esc(modelLine(a))}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
     ${a.child ? `<div class="meta">${esc(t('inSession', { title: agents.find(x => x.id === a.parent)?.title || t('untitledSession') }))}</div>` : ''}
     </div>
 
@@ -1086,7 +1090,7 @@ function renderPanel() {
     <div class="section subs ${subsOpen ? 'open' : ''}"><h4 class="fold ${subsOpen ? 'open' : ''}" data-act="subs" role="button" tabindex="0" aria-expanded="${subsOpen}"><span class="caret">▸</span>${esc(t('subagentsHeading', { n: a.subs.length }))}</h4>
       ${subsOpen ? `<div class="scroll">${a.subs.length ? a.subs.map(s => `<div class="sub ${selectedSub === s.id ? 'hl' : ''}">
           <span class="dot" style="color:${ST[s.status] || '#6b7080'}"></span>
-          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small><small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}${s.tokens > 0 ? ` · <span title="${esc(t('tokensAtLeastHint'))}">${esc(t('tokensAtLeast', { tokens: tokensText(s.tokens) }))}</span>` : ''}</small></div>
+          <div class="n">${esc(s.role || t('subagent'))}<small>${esc(s.description || '')}</small>${modelLine(s) ? `<small>${esc(modelLine(s))}</small>` : ''}<small>${esc(statusLabel(s.status))}${s.toolCalls ? ` · ${esc(t('toolCalls', { n: s.toolCalls }))}` : ''}${s.lastTool ? ` · ${esc(t('lastTool', { tool: s.lastTool }))}` : ''}${s.tokens > 0 ? ` · <span title="${esc(t('tokensAtLeastHint'))}">${esc(t('tokensAtLeast', { tokens: tokensText(s.tokens) }))}</span>` : ''}</small></div>
         </div>`).join('') : `<div class="empty">${esc(t('noSubagents'))}</div>`}</div>` : ''}
     </div>
     <div class="section activity ${logOpen ? 'open' : ''}"><h4 class="fold ${logOpen ? 'open' : ''}" data-act="log" role="button" tabindex="0" aria-expanded="${logOpen}"><span class="caret">▸</span>${esc(t('activityHeading', { n: (a.log || []).length }))}</h4>
