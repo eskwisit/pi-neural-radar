@@ -12,7 +12,7 @@ than given line numbers so the notes stay correct while the code changes.
 | Risk tier | **High**, because the plugin requests `desktop.control` |
 | Runtime files | `manifest.json`, `main.js`, `views/index.html`, `README.md`, `LICENSE` |
 | Dependencies | none (no `package.json`, no vendored, generated, minified or native code) |
-| Network | none. From 0.35.0 the plugin makes no requests (0.34.0 downloaded the picture set in the settings) |
+| Network | none. From 0.37.0 the plugin makes no requests (0.34.0 downloaded the picture set in the settings) |
 | File system | only for your picture: reads, writes and deletes `avatar.json` in `pi.plugin.getDataPath()`, and reads its own `manifest.json` (next to `main.js`) once at load for its version |
 | Process execution | none |
 | Dynamic code | none (no `eval`, `new Function`, dynamic `import()`, remote `<script>` or `<link>`) |
@@ -149,8 +149,8 @@ here as well.
 | 5 | `sessionsFrom()` throws on a `null` entry in the `session/list` answer. That poll fails and shows as `model.error`; the next poll retries | Info | Accepted |
 | 6 | README says "everything else it does is read-only". Opening the view automatically (`pi.ui.revealView`) is a UI side effect without a click; the setting controls it, and `off` disables it | Info | Clarified in README |
 | 7 | The local `dist/eskwisit.neural-radar-0.5.0.piplug` contains dev files (`.agents/`, `.github/`, `docs/neural-radar.png`, `.gitignore`). From 0.6.0 the release workflow packs only runtime files | Info | Fixed for 0.6.0 (`.github/workflows/release.yml`) |
-| 8 | 0.34.0 used Node `fs` and `fetch` to read a file path or download an https URL typed in the settings. From 0.35.0 the settings are gone and `fetch` is not used: the picture comes from the view's file picker as a data URL, and `fs` only touches `avatar.json` in the data folder and reads `manifest.json` for the version. The grep check below predates this and now also matches `require(` in `main.js` | Info | Accepted: documented in README and `safetyNotes` |
-| 9 | An update reloads `main.js`, but PI-Desktop keeps an open view's page (it never calls `closePlugin` on install or update). From 0.35.0 `radar.state` carries `version` (read from `manifest.json`) and the view calls `location.reload()` when it changes, unless the message box has focus. No network, no tokens | Info | Accepted; the host could close a plugin's views on update instead |
+| 8 | 0.34.0 used Node `fs` and `fetch` to read a file path or download an https URL typed in the settings. From 0.37.0 the settings are gone and `fetch` is not used: the picture comes from the view's file picker as a data URL, and `fs` only touches `avatar.json` in the data folder and reads `manifest.json` for the version. The grep check below predates this and now also matches `require(` in `main.js` | Info | Accepted: documented in README and `safetyNotes` |
+| 9 | An update reloads `main.js`, but PI-Desktop keeps an open view's page (it never calls `closePlugin` on install or update). From 0.37.0 `radar.state` carries `version` (read from `manifest.json`) and the view calls `location.reload()` when it changes, unless the message box has focus. No network, no tokens | Info | Accepted; the host could close a plugin's views on update instead |
 
 ## Known limits
 
