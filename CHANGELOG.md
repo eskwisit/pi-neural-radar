@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.31.0
+
+### Features
+
+- **view:** remove the top-bar pills of agents that need you (`9e577b6`)
+- **view:** show subagent tooltips only while their cluster is open (`59e1a7e`)
+- list the chat text instead of commands in activity (`e091d7d`)
+- show the effort next to the model in the drawer (`3caf0da`)
+
+### Documentation
+
+- **readme:** describe the chat-only activity, effort and subagent tooltips (`1e9f707`)
+
+### Tests
+
+- **tests:** cover the chat-only activity and the newest tool call (`9e6e66c`)
+- **tests:** cover the effort next to the model (`a289527`)
+
 ## 0.27.1
 
 ### Fixes
