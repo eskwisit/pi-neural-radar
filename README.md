@@ -2,7 +2,7 @@
 
 A live neural map of your PI-Desktop agents and their subagents, shown in the session's work panel.
 
-![Neural Radar: You at the centre with 3 agents waiting on you; an agent asking a question (its drawer open on the right, with the question and its answers), an agent waiting for your reply and a plan awaiting approval; a working agent with explorer, fixer and test-runner subagents and a working goal with ui-designer and code-reviewer; a finished agent fading at the edge; tooltips showing what each agent works on now, its state, the tool context and how long ago](docs/neural-radar.webp)
+![Neural Radar: your circle with your picture at the centre; two agents that need you, one asking a question (its drawer open on the right, with the question and its answers) and one waiting for your reply, both with opaque tooltips, and a plan awaiting approval; a working agent with 3 subagents and a working goal with 2; the explorer subagent of the open agent, done; a finished agent at the edge; tooltips showing what each agent works on now, its state, running subagents, tool context and how long ago](docs/neural-radar.webp)
 
 - **You** sit at the centre, as a circle with your picture (see [Your picture](#your-picture)).
   Each agent (a session) is a cluster of neurons; its subagents are the small clusters behind it.
