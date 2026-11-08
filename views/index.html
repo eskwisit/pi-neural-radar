@@ -118,8 +118,6 @@ const COPY = {
     subagent: 'subagent',
     subagentsOne: '{n} subagent',
     subagentsMany: '{n} subagents',
-    subsWorkingOne: '{n} subagent working',
-    subsWorkingMany: '{n} subagents working',
     thisSession: 'this session',
     waitingOnYou: '{n} waiting on you',
     nothingWaiting: 'Idle',
@@ -163,7 +161,6 @@ const COPY = {
     tokensOne: '{n} token',
     tokensMany: '{n} tokens',
     tokensAtLeast: '≥ {tokens}',
-    effort: 'effort {level}',
     toolCtxShort: '{n} tokens',
     tokensAtLeastHint: 'Tokens this subagent’s messages report in the transcript so far: a lower bound, since not every model call is recorded',
     nothingYet: 'Nothing yet',
@@ -195,8 +192,6 @@ const COPY = {
     subagent: '子智能体',
     subagentsOne: '{n} 个子智能体',
     subagentsMany: '{n} 个子智能体',
-    subsWorkingOne: '{n} 个子智能体工作中',
-    subsWorkingMany: '{n} 个子智能体工作中',
     thisSession: '当前会话',
     waitingOnYou: '{n} 个在等你',
     nothingWaiting: '空闲',
@@ -240,7 +235,6 @@ const COPY = {
     tokensOne: '{n} 个 token',
     tokensMany: '{n} 个 token',
     tokensAtLeast: '≥ {tokens}',
-    effort: '思考强度 {level}',
     toolCtxShort: '{n} tokens',
     tokensAtLeastHint: '此子智能体的消息在对话记录中目前报告的 token：这是下限，并非每次模型调用都有记录',
     nothingYet: '暂无记录',
@@ -271,8 +265,8 @@ function t(key, vars) {
 const plural = (n, one, many) => t(n === 1 ? one : many, { n });
 // a subagent's token count, compact in the user's language (12.3k, 1.2万, …)
 const tokensText = n => n > 0 ? t(n === 1 ? 'tokensOne' : 'tokensMany', { n: compactNum(n) }) : '';
-// the model and, when known, its effort (thinking level): "claude-opus-5-5 · effort high"
-const modelLine = x => [x.model, x.effort && x.effort !== 'omit' ? t('effort', { level: x.effort }) : ''].filter(Boolean).join(' · ');
+// the model and, when known, its effort (thinking level): "claude-opus-5-5 · high"
+const modelLine = x => [x.model, x.effort && x.effort !== 'omit' ? x.effort : ''].filter(Boolean).join(' · ');
 const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s || ''));
 // an agent is named after its session, as in PI-Desktop's session list
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
@@ -1028,7 +1022,6 @@ function renderPanel() {
   const col = ST[a.status];
   const live = a.status !== 'done';
   const q = a.question, p = a.plan;
-  const nRun = a.subs.filter(s => s.status === 'run').length;
   const armedStop = armed.get('stop') === a.id, armedAbort = armed.get('abort') === a.id;
   panel.innerHTML = `
     <button class="btn ghost close" data-act="close" aria-label="${esc(t('close'))}">✕</button>
@@ -1037,7 +1030,7 @@ function renderPanel() {
     <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span></h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
     <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
-    <div class="meta" style="margin-top:10px"><span>${esc(modelLine(a))}</span><span>${nRun ? esc(plural(nRun, 'subsWorkingOne', 'subsWorkingMany')) : ''}</span></div>
+    <div class="meta" style="margin-top:10px"><span>${esc(modelLine(a))}</span></div>
     ${a.child ? `<div class="meta">${esc(t('inSession', { title: agents.find(x => x.id === a.parent)?.title || t('untitledSession') }))}</div>` : ''}
     </div>
 
