@@ -228,19 +228,19 @@ function textOf(message) {
 }
 
 /**
- * The session's main agents, as PI-Desktop's chat shows them: every run of the agent's own tool
- * calls after your message or after the agent's text is one "Main agent" with the tasks it
- * delegated. Returns, per message, the group it belongs to (null for a subagent's messages), and
- * each group's key (the id of the message that opened it, stable while the transcript scrolls)
- * and what was said just before it.
+ * The session's main agents: each turn (your message and all the agent did after it, its notes
+ * between tool calls included) is one "Main agent" with the tasks it delegated. Returns, per
+ * message, the group it belongs to (null for a subagent's messages), and each group's key (the id
+ * of the message that opened it, stable while the transcript scrolls) and what was said in it.
+ * Only your message opens a group: an agent writes a short note before most tool calls, and
+ * splitting there gave every subagent a cluster of its own.
  */
 function groupsOf(messages) {
   const at = [];
   let cur = null;
   messages.forEach((m, i) => {
     if (parentCallOf(m)) { at.push(null); return; }
-    const opens = m?.role === "user" || (m?.role === "assistant" && !m?.toolName && textOf(m));
-    if (opens || !cur) cur = { key: str(m?.id) || `${ts(m?.createdAt ?? m?.created_at)}:${i}`, text: textOf(m), start: i };
+    if (m?.role === "user" || !cur) cur = { key: str(m?.id) || `${ts(m?.createdAt ?? m?.created_at)}:${i}`, text: textOf(m), start: i };
     at.push(cur);
   });
   return at;
@@ -319,8 +319,8 @@ function delegationsFrom(messages) {
 }
 
 /**
- * One main agent of a session (a group of groupsOf) with the subagents it delegated to, when the
- * session has more than one: it gets its own cluster, wired to its session. Actions on it go to
+ * One main agent of a session (a group of groupsOf: an earlier turn) with the subagents it
+ * delegated to that still run: it gets its own cluster, wired to its session. Actions on it go to
  * that session (`session`).
  */
 function mainAgent(sessionId, key, subs, messages, model, effort, active) {
@@ -634,13 +634,15 @@ async function poll() {
       log: activityLog(messages),
       lastCall: lastToolCall(messages),
     };
-    // two or more main agents (see groupsOf) each get their own cluster with their own subagents;
-    // with one, its subagents stay around the session's cluster
+    // subagents of an earlier turn that still run get one main-agent cluster per turn (see
+    // groupsOf); the latest turn's subagents stay around the session's own cluster
     const groups = [...new Set(subs.map((x) => x.group ?? ""))];
+    const startOf = new Map(groupsOf(messages).filter(Boolean).map((g) => [g.key, g.start]));
+    const latest = groups.reduce((a, g) => ((startOf.get(g) ?? -1) > (startOf.get(a) ?? -1) ? g : a), groups[0]);
     const mains = groups.length > 1
-      ? groups.map((g) => mainAgent(s.id, g, subs.filter((x) => (x.group ?? "") === g), messages, agent.model, agent.effort, isActive))
+      ? groups.filter((g) => g !== latest).map((g) => mainAgent(s.id, g, subs.filter((x) => (x.group ?? "") === g), messages, agent.model, agent.effort, isActive))
       : [];
-    if (mains.length) agent.subs = [];
+    if (mains.length) agent.subs = subs.filter((x) => (x.group ?? "") === latest);
     // a plainly finished agent only lingers for a while; one waiting for your reply stays
     if (statusKey !== "done" || recent) agents.push(agent, ...mains);
 
