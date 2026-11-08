@@ -288,25 +288,14 @@ function ageOf(a) {
   const [n, u] = s < 60 ? [s, 's'] : s < 3600 ? [s / 60, 'm'] : s < 86400 ? [s / 3600, 'h'] : [s / 86400, 'd'];
   return t('ago', { d: t('dur_' + u, { n: Math.floor(n) }) });
 }
-// the tooltip's second line: [state (in its colour), ' · fact · tool context · age' (muted)], kept to about 48 characters
+// the tooltip's second line: [state (in its colour), ' · running subagents · tokens · age' (muted)]
 function tipLine(a) {
   const stat = a.reply ? t('needsReply') : statusLabel(a.status);
-  let fact = '';
-  const q = a.question, p = a.plan, running = a.subs.filter(s => s.status === 'run');
-  if (q?.q) fact = `“${q.q}”`;
-  else if (a.reply) fact = `“${a.reply}”`;
-  else if (p) fact = p.title || t(p.kind === 'goal' ? 'goalReady' : 'planReady');
-  else if (a.status === 'run' && running.length === 1) fact = `${running[0].role || t('subagent')}: ${running[0].description || ''}`.replace(/: $/, '');
-  else if (a.status === 'run' && running.length > 1) fact = plural(running.length, 'subagentsOne', 'subagentsMany');
-  else if (a.status === 'run' && a.lastCall) fact = [a.lastCall.tool, a.lastCall.target].filter(Boolean).join(' ');
+  const running = a.subs.filter(s => s.status === 'run').length;
+  const subs = running ? plural(running, 'subagentsOne', 'subagentsMany') : '';
   // what the agent's own tool calls put into its context, in every state
   const ctxTok = a.toolTokens > 0 ? t('toolCtxShort', { n: compactNum(a.toolTokens) }) : '';
-  const age = ageOf(a);
-  // when space runs short the age goes first, so the fact stays readable
-  const roomFor = extra => 48 - stat.length - extra.reduce((w, x) => w + (x ? x.length + 3 : 0), 0) - 3;
-  const keepAge = !fact || roomFor([ctxTok, age]) >= Math.min(18, fact.length);
-  const extra = keepAge ? [ctxTok, age] : [ctxTok];
-  const tail = [fact && clip(fact, Math.max(12, roomFor(extra))), ...extra].filter(Boolean);
+  const tail = [subs, ctxTok, ageOf(a)].filter(Boolean);
   return [stat, tail.length ? ' · ' + tail.join(' · ') : ''];
 }
 function logLine(l) {
