@@ -112,7 +112,7 @@ describe("poll: model", () => {
     assert.deepEqual(t.model.agents[0].subs.map((s) => s.id), ["a1", "a2"]);
   });
 
-  it("gives each main agent of a session its own cluster with its own subagents", async () => {
+  it("keeps all subagents of one turn on the session, also with the agent's notes between launches", async () => {
     const now = Date.now();
     const messages = () => [
       user("fix the bug and document it", { id: "u1", createdAt: now - 40e3 }),
@@ -125,42 +125,64 @@ describe("poll: model", () => {
     ];
     const { t } = fresh({ respond: host({ sessions: [{ id: "s1", title: "Team", updatedAt: now }], running: () => true, messages }) });
     await t.poll();
+    assert.deepEqual(t.model.agents.map((a) => a.id), ["s1"]);
+    const [s] = t.model.agents;
+    assert.deepEqual(s.subs.map((x) => [x.id, x.tokens]), [["a1", 40], ["a2", 0], ["b1", 0]]);
+    assert.deepEqual(s.log.filter((l) => l.kind === "say").map((l) => l.text), ["Now the docs.", "Two parts. First the fix."]); // newest first
+  });
+
+  // turn 1 launches a1 and leaves it running; turn 2 launches b1
+  const twoTurns = (now, first) => {
+    let turn = 1;
+    const messages = () => [
+      user("fix the bug", { id: "u1", createdAt: now - 60e3 }),
+      assistant("First the fix.", { id: "m1", createdAt: now - 59e3 }),
+      first,
+      ...(turn > 1 ? [
+        user("and document it", { id: "u2", createdAt: now - 30e3 }),
+        assistant("Now the docs.", { id: "m2", createdAt: now - 29e3 }),
+        launch(now, "b1", "writer", "document it"),
+      ] : []),
+    ];
+    return { messages, next: () => { turn = 2; } };
+  };
+
+  it("gives an earlier turn whose subagents still run its own main-agent cluster", async () => {
+    const now = Date.now();
+    const { messages, next } = twoTurns(now, launch(now, "a1", "fixer", "fix the bug"));
+    const { t } = fresh({ respond: host({ sessions: [{ id: "s1", title: "Team", updatedAt: now }], running: () => true, messages }) });
+    await t.poll();
+    next();
+    await t.poll();
     const byId = new Map(t.model.agents.map((a) => [a.id, a]));
-    assert.deepEqual([...byId.keys()], ["s1", "s1::main:m1", "s1::main:m2"]);
-    assert.deepEqual(byId.get("s1").subs, []);
-    const a = byId.get("s1::main:m1"), b = byId.get("s1::main:m2");
-    assert.deepEqual(a.subs.map((s) => s.id), ["a1", "a2"]);
-    assert.deepEqual(b.subs.map((s) => s.id), ["b1"]);
-    for (const m of [a, b]) {
-      assert.equal(m.child, true);
-      assert.equal(m.parent, "s1");
-      assert.equal(m.session, "s1");
-      assert.equal(m.status, "run");
-    }
-    assert.equal(a.task, "Two parts. First the fix.");
-    assert.equal(a.tokens, 40);
-    assert.deepEqual(b.log.map((l) => [l.kind, l.text]), [["say", "Now the docs."]]); // chat text only, no Task launch
+    assert.deepEqual([...byId.keys()], ["s1", "s1::main:u1"]);
+    assert.deepEqual(byId.get("s1").subs.map((x) => x.id), ["b1"]);
+    const m = byId.get("s1::main:u1");
+    assert.deepEqual(m.subs.map((x) => x.id), ["a1"]);
+    assert.equal(m.child, true);
+    assert.equal(m.parent, "s1");
+    assert.equal(m.session, "s1");
+    assert.equal(m.status, "run");
+    assert.equal(m.task, "fix the bug");
+    assert.deepEqual(m.log.filter((l) => l.kind === "say").map((l) => l.text), ["First the fix."]); // chat text only, no Task launch
   });
 
   it("carries the effort next to the model for the session, its main agents and its subagents", async () => {
     const now = Date.now();
-    const messages = () => [
-      user("fix the bug and document it", { id: "u1", createdAt: now - 40e3 }),
-      assistant("First the fix.", { id: "m1", createdAt: now - 39e3 }),
-      { ...launch(now, "a1", "fixer", "fix the bug"), toolResult: { details: { delegationId: "a1", agent: "fixer", status: "running", modelId: "claude-opus-5-5", thinkingLevel: "high" } } },
-      assistant("Now the docs.", { id: "m2", createdAt: now - 20e3 }),
-      launch(now, "b1", "writer", "document it"),
-    ];
+    const first = { ...launch(now, "a1", "fixer", "fix the bug"), toolResult: { details: { delegationId: "a1", agent: "fixer", status: "running", modelId: "claude-opus-5-5", thinkingLevel: "high" } } };
+    const { messages, next } = twoTurns(now, first);
     const sessions = [{ id: "s1", title: "Team", updatedAt: now, modelId: "gpt-5", thinkingLevel: "medium" }];
     const { t } = fresh({ respond: host({ sessions, running: () => true, messages }) });
     await t.poll();
+    next();
+    await t.poll();
     const byId = new Map(t.model.agents.map((a) => [a.id, a]));
     assert.deepEqual([...byId.values()].map((a) => [a.id, a.model, a.effort]), [
-      ["s1", "gpt-5", "medium"], ["s1::main:m1", "gpt-5", "medium"], ["s1::main:m2", "gpt-5", "medium"],
+      ["s1", "gpt-5", "medium"], ["s1::main:u1", "gpt-5", "medium"],
     ]);
-    assert.deepEqual(byId.get("s1::main:m1").subs.map((s) => [s.id, s.model, s.effort]), [["a1", "claude-opus-5-5", "high"]]);
+    assert.deepEqual(byId.get("s1::main:u1").subs.map((s) => [s.id, s.model, s.effort]), [["a1", "claude-opus-5-5", "high"]]);
     // a subagent whose launch reported neither keeps them empty
-    assert.deepEqual(byId.get("s1::main:m2").subs.map((s) => [s.id, s.model, s.effort]), [["b1", "", ""]]);
+    assert.deepEqual(byId.get("s1").subs.map((s) => [s.id, s.model, s.effort]), [["b1", "", ""]]);
   });
 
   it("does not open the view on the first poll, then opens it when an agent starts working", async () => {
