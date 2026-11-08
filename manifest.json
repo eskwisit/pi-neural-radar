@@ -73,20 +73,6 @@
 				"title": "Notify me when an agent needs me",
 				"type": "boolean",
 				"default": true
-			},
-			{
-				"key": "avatarImage",
-				"title": "Your picture in the radar",
-				"description": "Full path of an image file (PNG, JPEG, GIF or WebP, up to 2 MB; ~/ works) or an https image URL. It is read once and cached by the plugin. Clear it to remove the picture and its cache, or to use the Gravatar below.",
-				"type": "string",
-				"default": ""
-			},
-			{
-				"key": "gravatarEmail",
-				"title": "Gravatar email",
-				"description": "Shows the Gravatar of this address in your circle when no picture is set. Downloaded once and cached; clear it to remove.",
-				"type": "string",
-				"default": ""
 			}
 		]
 	},

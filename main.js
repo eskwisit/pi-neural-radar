@@ -37,7 +37,7 @@ const REOPEN_COOLDOWN_MS = 30 * 1000;
 
 let autoOpen = "working";
 let notifyOn = true;
-let me = { image: "", key: "" }; // your picture in the centre of the radar (see refreshAvatar)
+let me = { image: "", key: "" }; // your picture in the centre of the radar (see loadAvatar)
 let timer = null;
 let stopped = false;
 let model = { agents: [], error: null };
@@ -859,6 +859,11 @@ async function onPanelInvoke(channel, payload) {
     // `version` lets a view left open across an update see that main.js changed and reload itself.
     if (channel === "radar.state") return { ok: true, model, me: { key: me.key }, version: VERSION };
     if (channel === "radar.me") { await avatarJob; return { ok: true, ...me }; }
+    if (channel === "radar.setMe") {
+      const job = avatarJob.then(() => saveAvatar(payload?.image));
+      avatarJob = job.catch(() => {});
+      return await job;
+    }
     if (channel === "radar.action") {
       const result = await act(payload ?? {});
       pollSoon();
@@ -876,93 +881,59 @@ async function readSettings() {
     const s = await pi.plugin.getSettings();
     if (["working", "subagents", "attention", "off"].includes(s?.autoOpen)) autoOpen = s.autoOpen;
     if (typeof s?.notify === "boolean") notifyOn = s.notify;
-    avatarJob = refreshAvatar(s);
   } catch {
     /* keep the default */
   }
 }
 
 // ---------- your picture in the centre ----------
-// Set in the plugin's settings only: a file path or an https URL (avatarImage), else the Gravatar
-// of an address (gravatarEmail). The picture is read or downloaded once and cached as a data URL
-// in the plugin's data folder (avatar.json, with the source it came from), so it survives restarts
-// and needs no network afterwards. Clearing both settings removes the picture and its cache.
-const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
-const AVATAR_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+// Chosen by clicking your circle in the radar: the view crops and shrinks the image you pick and
+// sends it as a data URL. It is kept in the plugin's data folder (avatar.json), so it survives
+// restarts; right-clicking your circle removes the picture and its file. No network is used.
+const AVATAR_MAX_CHARS = 2 * 1024 * 1024;
+const AVATAR_DATA = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/;
 const AVATAR_CACHE = "avatar.json";
-let avatarFor = null; // the source the current picture belongs to (null: not looked at yet)
-let avatarSeq = 0;
 let avatarJob = Promise.resolve();
-
-/** Where the picture comes from: the image setting, else the Gravatar URL of the email, else "". */
-function avatarSource(s) {
-  const image = str(s?.avatarImage).trim();
-  if (image) return image;
-  const email = str(s?.gravatarEmail).trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+$/.test(email)) return "";
-  // Gravatar takes the SHA-256 of the trimmed, lower-case address; d=404: no Gravatar, no picture
-  const hash = require("node:crypto").createHash("sha256").update(email).digest("hex");
-  return `https://gravatar.com/avatar/${hash}?s=112&d=404`;
-}
-
-/** Read (a local file) or download (https) the picture as a data URL. Throws when it cannot. */
-async function loadAvatar(source) {
-  const fs = require("node:fs"), path = require("node:path"), os = require("node:os");
-  let type, bytes;
-  if (/^https:\/\//i.test(source)) {
-    const r = await fetch(source, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error(`download failed (HTTP ${r.status})`);
-    type = str(r.headers.get("content-type")).split(";")[0].trim().toLowerCase();
-    bytes = Buffer.from(await r.arrayBuffer());
-  } else {
-    const file = source.startsWith("~/") ? path.join(os.homedir(), source.slice(2)) : source;
-    if (!path.isAbsolute(file)) throw new Error("give the full path of the image file, or an https URL");
-    type = AVATAR_TYPES[path.extname(file).slice(1).toLowerCase()];
-    if (!type) throw new Error("use a PNG, JPEG, GIF or WebP image");
-    if (fs.statSync(file).size > AVATAR_MAX_BYTES) throw new Error("the image is larger than 2 MB");
-    bytes = fs.readFileSync(file);
-  }
-  if (!Object.values(AVATAR_TYPES).includes(type)) throw new Error("not a PNG, JPEG, GIF or WebP image");
-  if (bytes.length > AVATAR_MAX_BYTES) throw new Error("the image is larger than 2 MB");
-  return `data:${type};base64,${bytes.toString("base64")}`;
-}
 
 function setMe(image) {
   me = { image, key: image ? require("node:crypto").createHash("sha256").update(image).digest("hex").slice(0, 16) : "" };
 }
 
-/** Bring the picture in line with the settings: from the cache when the source is unchanged. */
-async function refreshAvatar(s) {
-  const source = avatarSource(s);
-  if (source === avatarFor) return;
-  avatarFor = source;
-  const seq = ++avatarSeq;
-  const fs = require("node:fs"), path = require("node:path");
-  let file = "";
+/** The picture file in the plugin's data folder, or "" when there is no usable folder. */
+async function avatarFile() {
+  const path = require("node:path");
   try {
     const dir = str(await pi.plugin.getDataPath());
-    if (path.isAbsolute(dir)) file = path.join(dir, AVATAR_CACHE);
-  } catch { /* no data folder: no cache, the picture is loaded at each start */ }
-  if (seq !== avatarSeq) return;
-  if (!source) {
-    setMe("");
-    if (file) try { fs.rmSync(file, { force: true }); } catch { /* already gone */ }
-    return;
+    return path.isAbsolute(dir) ? path.join(dir, AVATAR_CACHE) : "";
+  } catch {
+    return "";
   }
-  let cached = null;
-  try { cached = file ? JSON.parse(fs.readFileSync(file, "utf8")) : null; } catch { /* no cache yet */ }
-  if (cached?.source === source && str(cached.image).startsWith("data:image/")) { setMe(cached.image); return; }
+}
+
+const validAvatar = (image) => AVATAR_DATA.test(image) && image.length <= AVATAR_MAX_CHARS;
+
+/** Load the saved picture at start. A missing or broken file means no picture. */
+async function loadAvatar() {
+  const file = await avatarFile();
+  let image = "";
+  try { image = str(JSON.parse(require("node:fs").readFileSync(file, "utf8"))?.image); } catch { /* none saved */ }
+  setMe(validAvatar(image) ? image : "");
+}
+
+/** Save the picture sent by the view, or remove it (and its file) when `image` is empty. */
+async function saveAvatar(image) {
+  const fs = require("node:fs");
+  image = str(image);
+  if (image && !validAvatar(image)) return { ok: false, message: "use a PNG, JPEG, GIF or WebP image up to 2 MB" };
+  const file = await avatarFile();
   try {
-    const image = await loadAvatar(source);
-    if (seq !== avatarSeq) return;
-    setMe(image);
-    if (file) fs.writeFileSync(file, JSON.stringify({ source, image, savedAt: Date.now() }));
+    if (file && image) fs.writeFileSync(file, JSON.stringify({ image, savedAt: Date.now() }));
+    else if (file) fs.rmSync(file, { force: true });
   } catch (error) {
-    if (seq !== avatarSeq) return;
-    setMe("");
-    if (file) try { fs.rmSync(file, { force: true }); } catch { /* already gone */ }
-    try { console.log(`picture not loaded from ${source}: ${error?.message ?? error}`); } catch { /* logging is best-effort */ }
+    return { ok: false, message: `picture not saved: ${error?.message ?? error}` };
   }
+  setMe(image);
+  return { ok: true, key: me.key };
 }
 
 const onSettings = () => { void readSettings(); };
@@ -971,6 +942,7 @@ async function onLoad() {
   stopped = false;
   firstPoll = true;
   timer = setTimeout(loop, 800);
+  avatarJob = loadAvatar();
   await readSettings();
   pi.events.on("plugin:settingsChanged", onSettings);
   pi.events.on("session:turnEnded", pollSoon);

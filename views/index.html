@@ -178,6 +178,9 @@ const COPY = {
     emptyConnecting: 'Waiting for the Neural Radar plugin…',
     emptyError: 'PI-Desktop did not answer: {error}',
     toastFailed: 'That did not go through',
+    toastPicture: 'Picture saved · right-click it to remove',
+    toastPictureRemoved: 'Picture removed',
+    toastPictureBad: 'Could not read that image',
     toastSent: 'Sent to the agent',
     toastQueued: 'Queued: sends when the agent’s turn ends',
     sentAt: 'Sent at {time}',
@@ -259,6 +262,9 @@ const COPY = {
     emptyConnecting: '正在等待神经雷达插件…',
     emptyError: 'PI-Desktop 没有响应：{error}',
     toastFailed: '操作未成功',
+    toastPicture: '头像已保存 · 右键点击可移除',
+    toastPictureRemoved: '头像已移除',
+    toastPictureBad: '无法读取该图片',
     toastSent: '已发送给智能体',
     toastQueued: '已排队：本回合结束后发送',
     sentAt: '{time} 已发送',
@@ -936,8 +942,9 @@ function draw(time) {
 
 // ---------- your circle: 36 px, 3 px white border, your picture or a neuron core ----------
 const ME_R = 18, ME_BORDER = 3;
-// your picture is set in the plugin's settings; main.js reads and caches it, and the state only
-// carries its key, so the picture itself crosses over once per change
+// your picture: click your circle to pick an image; it is cropped to its middle square, shrunk and
+// kept by main.js; right-click removes it. The state only carries its key, so the picture itself
+// crosses over once per change
 let meKey = '', meImg = null;
 async function syncMe(m) {
   const key = String(m?.key || '');
@@ -951,6 +958,54 @@ async function syncMe(m) {
     img.onload = () => { if (meKey === key) meImg = img; };
     img.src = r.image;
   } catch { meKey = ''; } // try again on the next poll
+}
+const ME_PX = 128; // the saved picture's size: sharp at 36 px on a high-density screen
+let mePicker = null;
+function pickMe() {
+  if (!mePicker) {
+    mePicker = document.createElement('input');
+    mePicker.type = 'file';
+    mePicker.accept = 'image/png,image/jpeg,image/gif,image/webp';
+    mePicker.style.display = 'none';
+    mePicker.addEventListener('change', () => {
+      const file = mePicker.files?.[0];
+      mePicker.value = ''; // picking the same file again still fires change
+      if (file) void shrinkMe(file).then(saveMe, () => toast(t('toastPictureBad')));
+    });
+    document.body.appendChild(mePicker);
+  }
+  mePicker.click();
+}
+/** The middle square of the image file, as a ME_PX × ME_PX data URL. */
+async function shrinkMe(file) {
+  const img = await createImageBitmap(file);
+  const s = Math.min(img.width, img.height);
+  if (!s) throw new Error('empty image');
+  const c = document.createElement('canvas');
+  c.width = c.height = ME_PX;
+  const g = c.getContext('2d');
+  g.fillStyle = '#16161f'; g.fillRect(0, 0, ME_PX, ME_PX);
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, ME_PX, ME_PX);
+  img.close?.();
+  const webp = c.toDataURL('image/webp', 0.9);
+  return webp.startsWith('data:image/webp') ? webp : c.toDataURL('image/png');
+}
+/** Save (or, with '', remove) your picture and show it at once. */
+async function saveMe(image) {
+  try {
+    const r = await window.pluginBridge.invoke('radar.setMe', { image });
+    if (!r?.ok) { toast(r?.message || t('toastFailed')); return; }
+    meKey = String(r.key || '');
+    meImg = null;
+    if (image) {
+      const img = new Image();
+      img.onload = () => { if (meKey === r.key) meImg = img; };
+      img.src = image;
+    }
+    you.flash = 1;
+    toast(t(image ? 'toastPicture' : 'toastPictureRemoved'));
+  } catch (e) { toast(String(e?.message || e)); }
 }
 function drawMe() {
   // a beam reaching you bumps the whole circle: it swells slightly (up to about 1.09×), then settles back
@@ -1002,7 +1057,7 @@ function hitTest(x, y) {
   const order = [...agents].sort((p, q) => q.attention - p.attention);
   const inRect = L => L && x >= L.x && x <= L.x + L.w && y >= L.y && y <= L.y + L.h;
   // same order as drawn, top first: You (main) > agents > subagents
-  if (Math.hypot(x - you.x, y - you.y) < 62 * K) return { you: true };
+  if (Math.hypot(x - you.x, y - you.y) <= ME_R + 6) return { you: true };
   // tooltips can overlap: the one drawn last (on top) wins
   const onLabel = agents.filter(a => inRect(a.label)).sort((p, q) => q.label.z - p.label.z)[0];
   if (onLabel) return { a: onLabel };
@@ -1012,16 +1067,21 @@ function hitTest(x, y) {
 }
 canvas.addEventListener('mousemove', e => {
   hover = hitTest(e.clientX, e.clientY);
-  // You (the centre) is not clickable
-  canvas.style.cursor = hover && !hover.you ? 'pointer' : 'default';
+  // your circle is clickable too: click to pick your picture, right-click to remove it
+  canvas.style.cursor = hover ? 'pointer' : 'default';
 });
 canvas.addEventListener('mouseleave', () => { hover = null; });
 canvas.addEventListener('click', e => {
   const h = hitTest(e.clientX, e.clientY);
-  if (h?.you) return; // You (the centre) is not clickable
+  if (h?.you) { pickMe(); return; }
   if (!h) { select(null); return; }
   if (h.a && !h.s && selected === h.a.id) { select(null); return; } // clicking the open agent again closes the drawer
   select(h.a.id, h.s?.id || null);
+});
+canvas.addEventListener('contextmenu', e => {
+  if (!hitTest(e.clientX, e.clientY)?.you) return;
+  e.preventDefault();
+  if (meKey) void saveMe('');
 });
 addEventListener('keydown', e => { if (e.key === 'Escape') select(null); });
 addEventListener('resize', () => { resize(); });
