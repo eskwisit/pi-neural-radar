@@ -12,12 +12,12 @@ than given line numbers so the notes stay correct while the code changes.
 | Risk tier | **High**, because the plugin requests `desktop.control` |
 | Runtime files | `manifest.json`, `main.js`, `views/index.html`, `README.md`, `LICENSE` |
 | Dependencies | none (no `package.json`, no vendored, generated, minified or native code) |
-| Network | only for your picture: one `fetch` of the https image URL or Gravatar (`https://gravatar.com/avatar/<sha256>?s=112&d=404`) set in the settings, 10 s timeout, when the setting changes and no cached copy exists |
-| File system | only for your picture: reads the image file set in the settings (absolute or `~/` path, PNG/JPEG/GIF/WebP, at most 2 MB) and writes/deletes `avatar.json` in `pi.plugin.getDataPath()` |
+| Network | none. From 0.35.0 the plugin makes no requests (0.34.0 downloaded the picture set in the settings) |
+| File system | only for your picture: reads, writes and deletes `avatar.json` in `pi.plugin.getDataPath()`, and reads its own `manifest.json` (next to `main.js`) once at load for its version |
 | Process execution | none |
 | Dynamic code | none (no `eval`, `new Function`, dynamic `import()`, remote `<script>` or `<link>`) |
-| Persistence | the settings (`autoOpen`, `notify`, `avatarImage`, `gravatarEmail`), which the host keeps (declared in `contributes.settings`); the plugin only reads them. The picture cache `avatar.json` (source + data URL) in the plugin's data folder, deleted when the picture settings are cleared or the picture cannot be loaded. Queued messages live in memory only |
-| Data leaving the machine | no session data. The only outgoing request is the picture download: the URL you set, or the Gravatar URL, which carries the SHA-256 hash of the email you set |
+| Persistence | the settings (`autoOpen`, `notify`), which the host keeps (declared in `contributes.settings`); the plugin only reads them. Your picture `avatar.json` (a data URL) in the plugin's data folder, written when you pick a picture by clicking your circle and deleted when you right-click it. Queued messages live in memory only |
+| Data leaving the machine | none |
 | Required reviewers | two independent maintainers (to be named on the plugin center) |
 
 ## Risk tier
@@ -45,13 +45,13 @@ reviewer should confirm this against host policy):
 | Call | Purpose | Where | On failure |
 |---|---|---|---|
 | `pi.session.getActive()` | Which session is in front, used to highlight it and keep it watched | `poll()` | `.catch(() => null)`: treated as "no active session" |
-| `pi.plugin.getSettings()` | Reads `autoOpen` (only `working`, `subagents`, `attention` and `off` are accepted), `notify`, `avatarImage` and `gravatarEmail` | `readSettings()` | The defaults are kept |
-| `pi.plugin.getDataPath()` | The folder of the picture cache `avatar.json` | `refreshAvatar()` | No cache: the picture is loaded again at each start |
+| `pi.plugin.getSettings()` | Reads `autoOpen` (only `working`, `subagents`, `attention` and `off` are accepted) and `notify` | `readSettings()` | The defaults are kept |
+| `pi.plugin.getDataPath()` | The folder of your picture `avatar.json` | `avatarFile()` | No file: a picked picture lasts until the plugin reloads |
 | `pi.commands.register()` / `unregister()` | The `neural-radar.open` command (declared in `contributes.commands`) | `onLoad()` / `onUnload()` | Ignored; the radar works without it |
 | `pi.events.on()` / `off()` | `plugin:settingsChanged`, `session:turnEnded`, `session:activated` | `onLoad()` / `onUnload()` | none |
 
 The view (`views/index.html`) also calls the host bridge directly: `window.pluginBridge.invoke`
-with `radar.state`, `radar.me` (your picture, asked only when its key in the state changes) and `radar.action` (answered by `onPanelInvoke()`), `app.getAppearance`, and
+with `radar.state`, `radar.me` (your picture, asked only when its key in the state changes), `radar.setMe` (saves or, with an empty string, removes your picture) and `radar.action` (answered by `onPanelInvoke()`), `app.getAppearance`, and
 `pluginBridge.on("appearance:changed")`. The last two only read the UI locale.
 
 ### No `composer.suggest`
@@ -70,7 +70,7 @@ action were removed so that the manifest uses only permissions the audit knows. 
 | Read pending plans | `poll()` | `plans/pending` (`[{}]` once per poll; `[{ sessionId }]` when a status reports a plan the global read missed) | In-memory model → view | `desktop.control` | none | one global read per poll | same |
 | Show the radar | view `pull()` → `onPanelInvoke("radar.state")` | the model above | the plugin's own view, rendered with `esc()` | `ui.view` | none | view pulls every 1 s while shown, every 5 s while hidden | view timers end with the webview; the main side holds no handle to the view |
 | Open the view automatically | `maybeReveal()` | the setting `autoOpen` | `pi.ui.revealView` | `ui.view` | Setting **Open the radar automatically** (`off` disables it) | never on the first poll; 30 s cooldown for "started working" (`REOPEN_COOLDOWN_MS`) | none needed |
-| Your picture | `readSettings()` → `refreshAvatar()` | the settings `avatarImage` (file path or https URL) or `gravatarEmail` | the cache `avatar.json` → view (`radar.me`), drawn in a canvas circle | none | set and cleared by you in the settings | read or downloaded once per source; files and downloads over 2 MB or of another type are refused | clearing the settings deletes the cache |
+| Your picture | view: click your circle → file picker → `shrinkMe()` (middle square, 128 px) → `radar.setMe` → `saveAvatar()` | the image file you pick in the system file dialog; the plugin never sees its path | `avatar.json` → view (`radar.me`), drawn in a canvas circle | none | click to set, right-click to remove | only a base64 PNG, JPEG, GIF or WebP data URL up to 2 MB is saved; anything else is refused and the current picture kept | right-click deletes the file |
 | Open a session | drawer **Open session** → `act({ action: "open" })` | sessionId | `session/open` | `desktop.control` | one click | one call | none |
 | Send a message to the agent | drawer **Send to agent** or Ctrl/⌘+Enter → `act({ action: "send" })` | the text the user typed | `agent/prompt` `{ sessionId, content }`; to a running agent (or on `AGENT_BUSY`) the text waits in an in-memory queue (at most 20 per session) and is sent by `poll()` when the turn ends | `desktop.control` | one click; empty text is refused | one call | none |
 | Approve or reject a plan | drawer **Approve** / **Reject** → `act({ action: "plan" })` | the proposal ids shown in the drawer | `plans/resolve` with **`confirm: true`** | `desktop.control` | one click on a visible, specific plan. Refused when `proposalId`, `turnId` or `toolCallId` is missing | one call. Approve uses the session's own permission mode when it is `ask`, `accept-edits` or `auto`, and `ask` otherwise; Reject sends no mode | none |
@@ -149,7 +149,8 @@ here as well.
 | 5 | `sessionsFrom()` throws on a `null` entry in the `session/list` answer. That poll fails and shows as `model.error`; the next poll retries | Info | Accepted |
 | 6 | README says "everything else it does is read-only". Opening the view automatically (`pi.ui.revealView`) is a UI side effect without a click; the setting controls it, and `off` disables it | Info | Clarified in README |
 | 7 | The local `dist/eskwisit.neural-radar-0.5.0.piplug` contains dev files (`.agents/`, `.github/`, `docs/neural-radar.png`, `.gitignore`). From 0.6.0 the release workflow packs only runtime files | Info | Fixed for 0.6.0 (`.github/workflows/release.yml`) |
-| 8 | From 0.34.0 the plugin uses Node `fs` and `fetch` (via `require("node:fs")` and the global `fetch`) for your picture only: it reads the file path, or downloads the https URL, that you type in the settings, so it can read any image file you can, up to 2 MB, and only an image type is accepted. The data stays in the plugin's data folder and its own view. The grep check below predates this and now also matches `require(` and `fetch(` in `refreshAvatar()` / `loadAvatar()` | Info | Accepted: you choose the source; documented in README and `safetyNotes` |
+| 8 | 0.34.0 used Node `fs` and `fetch` to read a file path or download an https URL typed in the settings. From 0.35.0 the settings are gone and `fetch` is not used: the picture comes from the view's file picker as a data URL, and `fs` only touches `avatar.json` in the data folder and reads `manifest.json` for the version. The grep check below predates this and now also matches `require(` in `main.js` | Info | Accepted: documented in README and `safetyNotes` |
+| 9 | An update reloads `main.js`, but PI-Desktop keeps an open view's page (it never calls `closePlugin` on install or update). From 0.35.0 `radar.state` carries `version` (read from `manifest.json`) and the view calls `location.reload()` when it changes, unless the message box has focus. No network, no tokens | Info | Accepted; the host could close a plugin's views on update instead |
 
 ## Known limits
 
