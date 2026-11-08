@@ -23,8 +23,9 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   detail, the tokens its own tool calls added to its context (an estimate from their size), and
   how long ago it last did something, e.g. `Working · Edit index.html · 12.4K tokens · 12s ago`.
   The detail is the question or plan waiting for you, the running subagent and its task, or the
-  tool in use and its target. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent reads
-  as its role (`explorer`, `fixer`, …) with the task it was given.
+  tool in use and its target. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent's tooltip
+  shows only while its agent's cluster is open in the drawer, and reads as its role (`explorer`,
+  `fixer`, …) with the task it was given.
 - **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
   with a question for you, or a plan waits for approval), working agents further out, finished
   ones at the edge. An agent keeps its own direction from you for
@@ -56,15 +57,15 @@ Turn it off with **Notify me when an agent needs me** (Plugins → Neural Radar 
 
 ## Stepping in
 
-Click an agent (its neuron, its tooltip or its chip in the top bar) to toggle its drawer. While the
+Click an agent (its neuron or its tooltip) to toggle its drawer. While the
 drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
 drawer leaves visible, however far they are from you.
 
 The top of the drawer stays put: the session name (on one line, cut short with "…" when it is long),
-your latest prompt, its state, its model and the actions below. Each subagent
-in **Subagents** shows the tokens its transcript reports so far, marked `≥`: a lower bound, since
+your latest prompt, its state, its model with its effort (thinking level) and the actions below. Each
+subagent in **Subagents** shows its model and effort when its launch reports them, and the tokens its transcript reports so far, marked `≥`: a lower bound, since
 the host does not record every model call of a subagent in the transcript.
-**Activity** names each tool with its target (a file, a command, a pattern or a host). **Subagents** and **Activity** fold
+**Activity** lists the text of the chat session: your messages, the agent's replies and the questions it asked you; tool calls and commands are left out. **Subagents** and **Activity** fold
 open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
 drawer from a subagent unfolds Subagents on it. The drawer offers:
 
