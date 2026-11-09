@@ -2,7 +2,7 @@
 	"schemaVersion": 1,
 	"id": "eskwisit.neural-radar",
 	"name": "Neural Radar",
-	"version": "0.39.1",
+	"version": "0.40.1",
 	"description": "A live neural map of your running agents and their subagents. You sit at the centre; the more an agent needs you, the closer it moves. Click an agent to jump to its session, approve a plan, send it a message or stop it.",
 	"author": "eskwisit",
 	"license": "Apache-2.0",
@@ -22,7 +22,7 @@
 		}
 	},
 	"safetyNotes": "Uses the high-risk desktop.control permission to read the session list, agent status, transcripts (last 60 messages), subagents and pending plans, and, only when you click in the drawer, to open a session, send a message, approve or reject a plan, or stop or abort a turn (stop and abort need a second confirming click). ui.view docks the radar in the work panel. notify shows a system notification and an in-app notice when an agent needs you; turn it off in the plugin settings. No network access. Your picture, which you pick by clicking your circle in the radar, is kept in its data folder (removed when you right-click your circle). Nothing else is stored besides its settings.",
-	"changelog": "Finished subagents fade off the radar, the drawer closes once your message is sent or queued, and new empty sessions no longer show up.",
+	"changelog": "Hovering your circle shows a pencil over a dark overlay, and your circle now bumps the moment a beam reaches your picture.",
 	"contributes": {
 		"views": [
 			{
