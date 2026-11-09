@@ -58,6 +58,15 @@ describe("poll: bounds", () => {
     assert.deepEqual(pi.invocations.filter((r) => r.operation === "agent/getStatus").map((r) => r.args[0]), ["new"]);
   });
 
+  it("keeps a new, empty session (\"New task\") off the radar, also when it is the active one", async () => {
+    const now = Date.now();
+    const sessions = [{ id: "empty", title: "New task", updatedAt: now }, { id: "used", title: "Work", updatedAt: now }];
+    const messages = (id) => (id === "used" ? [user("do it", now)] : []);
+    const { t } = fresh({ respond: host({ sessions, messages }), active: { sessionId: "empty" } });
+    await t.poll();
+    assert.deepEqual(t.model.agents.map((a) => a.id), ["used"]);
+  });
+
   it("only reads: a poll sends no acting operation", async () => {
     const now = Date.now();
     const { pi, t } = fresh({

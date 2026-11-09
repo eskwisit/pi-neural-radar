@@ -185,7 +185,7 @@ describe("act: messages to a busy agent wait in a queue", () => {
       switch (operation) {
         case "session/list": return { sessions: [{ id: "s1", updatedAt: now, title: "S1" }] };
         case "agent/getStatus": return { status: { isRunning: state.running } };
-        case "session/get": return { messages: [] };
+        case "session/get": return { messages: [{ role: "user", content: "start" }] };
         case "agent/prompt": if (state.busy) throw busyError(); return { accepted: true };
         default: return {};
       }
