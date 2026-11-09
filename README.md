@@ -16,6 +16,9 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   activity. To send a message to it or stop it, open the session.
 - **Subagent fans widen.** Behind an agent with more than 3 subagents, the fan opens wider and
   further out so up to 6 subagents stay readable, and the agent stays far enough from the edge.
+- **Finished subagents fade away.** A subagent that is done or stopped stays on the radar for 2
+  seconds, fades out over 1.5 seconds, and the rest of the fan closes up. The drawer's
+  **Subagents** section still lists it.
 - **Every agent shows its tooltip.** The first line is what it works on now: the first line of
   your latest prompt that names a topic, so it follows the session when it changes subject (short
   go-aheads like "ok" or "build it" are skipped). The second line is its state, the number of
