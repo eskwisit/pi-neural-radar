@@ -1244,13 +1244,15 @@ async function send(a) {
   const text = draft.trim();
   if (!text) return;
   draft = '';
+  document.getElementById('draft')?.blur(); // the field lets go at once; the drawer closes once the message is taken
   renderPanel();
   const r = await act(a, { action: 'send', text }, YOU_SIGNAL);
   if (r?.ok) {
     const queued = r.delivery === 'queued';
     lastSend.set(a.id, { kind: queued ? 'queued' : 'sent', t: Date.now() });
     toast(t(queued ? 'toastQueued' : 'toastSent'));
-  } else if (!draft) draft = text; // not taken: give the text back
+    if (selected === a.id && !draft) return select(null);
+  } else if (!draft) draft = text; // not taken: give the text back, the drawer stays open
   if (selected === a.id) renderPanel();
 }
 // queued messages that went out (or could not) since the last look: say so once
