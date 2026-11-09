@@ -597,6 +597,9 @@ async function poll() {
     }
     const detail = await op("session/get", [{ id: s.id, messageLimit: 60 }]).catch(() => null);
     const messages = messagesFrom(detail);
+    // a new, empty session (host title "New task") has nothing to show: keep it off the radar
+    // (a failed read is not an empty session; one with queued messages stays)
+    if (detail && !messages.length && !running && !planKey && !outbox.get(s.id)?.length) continue;
 
     const question = running ? pendingQuestionFrom(messages) : null;
     let plan = pendingPlan ? planOf(pendingPlan) : null;
