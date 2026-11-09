@@ -32,6 +32,8 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   with a question for you, or a plan waits for approval), working agents further out, finished
   ones at the edge. An agent keeps its own direction from you for
   life; it only moves closer or further away.
+- **New empty sessions stay off the radar.** A session with no message yet (PI-Desktop's
+  "New task") appears once it has something to show.
 - **Signals** run along the mesh: pink/amber toward you when something needs you, teal for
   progress, lilac from you when you act, blue when an agent hands a task to a subagent.
 
@@ -85,8 +87,9 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
   current permission mode
 - **Send to agent** (⌘↵): an idle agent gets the message at once. A running agent cannot take a new
   turn, so the message waits in a queue shown under the box and goes out when the turn ends, one per
-  turn. The drawer says whether it was sent or queued, and a notice tells you when a queued message
-  goes out. The queue lives in the plugin: it is lost when the plugin reloads
+  turn. A notice says whether it was sent or queued and the drawer closes; if the message is not
+  taken, the drawer stays open with your text. A notice also tells you when a queued message goes
+  out. The queue lives in the plugin: it is lost when the plugin reloads
 - **Open session**, **Stop** (at the next safe point) and **Abort** (now); Stop and Abort ask for a
   second click
 
