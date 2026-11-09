@@ -61,7 +61,8 @@ Turn it off with **Notify me when an agent needs me** (Plugins → Neural Radar 
 
 ## Your picture
 
-You are a 36 px circle with a 3 px white border, without a label. **Click your circle** to pick
+You are a 36 px circle with a 3 px white border, without a label. Hovering it darkens it and shows
+a pencil. **Click your circle** to pick
 a picture (PNG, JPEG, GIF or WebP): its middle square is cut out, shrunk to 128 px and kept in the
 plugin's data folder (`avatar.json`), so it survives restarts. Click again to pick another one;
 **right-click your circle** to remove the picture and its file. With no picture, the circle shows a
