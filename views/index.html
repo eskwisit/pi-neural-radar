@@ -645,9 +645,9 @@ function shortestPath(src, dst) {
 
 // ---------- signals (action potentials travelling through the mesh) ----------
 const spikes = [];
-function spike(src, dst, color, v, onArrive) {
+function spike(src, dst, color, v, onArrive, reach = 0) {
   const path = shortestPath(src, dst);
-  if (path && path.length > 1) spikes.push({ path, s: 0, v, color: rgb(color), onArrive });
+  if (path && path.length > 1) spikes.push({ path, s: 0, v, color: rgb(color), onArrive, reach });
 }
 
 // ---------- update ----------
@@ -760,7 +760,7 @@ function update(dt, t) {
     const rate = asking ? 1.1 * a.attention : a.status === 'run' ? 0.12 : 0;
     if (Math.random() < rate * dt) {
       a.flash = 1;
-      spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); });
+      spike(a.hub, you.hub, ST[a.status], 230 * K, () => { you.flash = Math.max(you.flash, 0.6); }, ME_R - ME_BORDER);
     }
     // a main agent: a hand-off from its session when it starts, then traffic while it works
     const from = a.parent && agents.find(x => x.id === a.parent);
@@ -777,9 +777,12 @@ function update(dt, t) {
     }
   }
   for (let i = spikes.length - 1; i >= 0; i--) {
-    const sp = spikes[i];
+    const sp = spikes[i], L = pathLen(sp.path);
     sp.s += sp.v * dt;
-    if (sp.s >= pathLen(sp.path) + 60) { sp.onArrive?.(); spikes.splice(i, 1); }
+    // it arrives when its head reaches the target (for you: the edge of your picture, inside the
+    // border), not once its trail has passed; the trail still runs out before it is removed
+    if (sp.onArrive && sp.s >= L - (sp.reach || 0)) { sp.onArrive(); sp.onArrive = null; }
+    if (sp.s >= L + 60) spikes.splice(i, 1);
   }
 }
 function pathLen(path) { let L = 0; for (let i = 1; i < path.length; i++) L += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y); return L; }
