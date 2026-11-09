@@ -436,10 +436,14 @@ function clusterPts(owner, n, rad, hubR, pr = 1) {
 // ---------- live agents (fed by the plugin's main process) ----------
 const MAX_SUBS = 6;
 function mkSub(id, role) {
-  const s = { id, role, status: 'run', description: '', x: 0, y: 0, born: now(), seed: Math.random() * 10, dispatch: true };
+  const s = { id, role, status: 'run', description: '', x: 0, y: 0, born: now(), seed: Math.random() * 10, dispatch: true, endAt: null, vis: 1 };
   s.pts = clusterPts(s, 5, 15, 3.8, 1.3); s.hub = s.pts[0];
   return s;
 }
+// a finished subagent leaves the radar: it stays SUB_HOLD s, fades out over SUB_FADE s, then is
+// no longer drawn, wired or hit (the drawer still lists it)
+const SUB_HOLD = 2, SUB_FADE = 1.5;
+const onRadar = a => a.subs.filter(s => s.vis > 0);
 const agents = [];
 const LANES = 12;
 // each agent keeps a lane (direction from you) for life: the free lane furthest from the others
@@ -473,6 +477,7 @@ let subsOpen = false; // so does Subagents, unless you open the drawer from one 
 let revealSub = false; // scroll the picked subagent into view on the next render
 function attentionFor(s) { return { need: 0.93, approve: 0.75, run: 0.2, paused: 0.35, stopped: 0.03, done: 0.04 }[s] ?? 0.2; }
 
+let synced = false; // false until the first state arrives
 function sync(model) {
   const seen = new Set();
   for (const m of model.agents || []) {
@@ -487,8 +492,14 @@ function sync(model) {
     for (const ms of (m.subs || []).slice(-MAX_SUBS)) {
       subSeen.add(ms.id);
       let s = a.subs.find(x => x.id === ms.id);
-      if (!s) { s = mkSub(ms.id, ms.role); a.subs.push(s); }
+      if (!s) {
+        s = mkSub(ms.id, ms.role); a.subs.push(s);
+        // already finished when the page first sees it: it is not drawn at all
+        if (!synced && ms.status !== 'run') { s.endAt = -Infinity; s.vis = 0; s.dispatch = false; }
+      }
       Object.assign(s, { role: ms.role, status: ms.status, description: ms.description, toolCalls: ms.toolCalls, lastTool: ms.lastTool, model: ms.model || '', effort: ms.effort || '', tokens: ms.tokens || 0 });
+      if (s.status === 'run') s.endAt = null;
+      else if (s.endAt === null) s.endAt = now();
     }
     a.subs = a.subs.filter(s => subSeen.has(s.id));
   }
@@ -504,6 +515,7 @@ function sync(model) {
   const m = (model.agents || []).find(x => x.id === selected);
   const sig = m ? JSON.stringify(m) : '';
   if (selected && sig !== panelSig && document.activeElement?.id !== 'draft') { panelSig = sig; renderPanel(); }
+  synced = true;
 }
 
 // the page is shown when it has a size; hidden, it only keeps the state roughly current
@@ -541,7 +553,7 @@ const MAX_DEG = 4;
 function buildGraph() {
   for (const p of filler) p.off = p.x < -90 || p.x > W + 90 || p.y < -90 || p.y > H + 90;
   nodes = [...you.pts, ...filler.filter(p => !p.off)];
-  for (const a of agents) { nodes.push(...a.pts); for (const s of a.subs) nodes.push(...s.pts); }
+  for (const a of agents) { nodes.push(...a.pts); for (const s of onRadar(a)) nodes.push(...s.pts); }
   nodes.forEach((p, i) => { p.i = i; p.deg = 0; p.ideg = 0; p.edeg = 0; p.own = null; });
   const spacing = Math.sqrt((W * 1.14) * (H * 1.14) / filler.length);
   const thr = clamp(1.9 * spacing, 50, 150), cand = [];
@@ -584,7 +596,7 @@ function buildGraph() {
   // a main agent's cluster is wired to its session
   for (const a of agents) { const p = a.parent && agents.find(x => x.id === a.parent); if (p) add(a.hub, p.hub, 0.5); }
   // a subagent is always wired to its agent
-  for (const a of agents) for (const s of a.subs) add(s.hub, a.hub, 0.5);
+  for (const a of agents) for (const s of onRadar(a)) add(s.hub, a.hub, 0.5);
   // one connected network: join every separate patch along the shortest available link
   const par = new Int32Array(nodes.length).map((_, i) => i);
   const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
@@ -640,6 +652,8 @@ function spike(src, dst, color, v, onArrive) {
 
 // ---------- update ----------
 function update(dt, t) {
+  // a finished subagent stays a moment, then fades away; the rest of the fan closes up behind it
+  for (const a of agents) for (const s of a.subs) s.vis = s.endAt === null ? 1 : clamp(1 - (now() - s.endAt - SUB_HOLD) / SUB_FADE, 0, 1);
   for (const k of ['x', 'y', 'w', 'h']) box[k] = lerp(box[k], boxT[k], Math.min(1, dt * 4));
   [you.x, you.y] = youAnchor();
   you.flash = Math.max(0, you.flash - dt * 1.8);
@@ -647,7 +661,7 @@ function update(dt, t) {
   // agent targets: distance along the network = 1 - attention
   const targets = agents.map(a => {
     a.attention = lerp(a.attention, a.target, Math.min(1, dt * 1.5));
-    const [x, y] = placeAgent(a), n = a.subs.length;
+    const [x, y] = placeAgent(a), n = onRadar(a).length;
     if (n <= 3) return [x, y];
     // a wide fan (more than 3 subagents) needs room inside the radar for its labels
     const reach = (fanR(n) + 34) * K + 40 * K, b = box;
@@ -666,7 +680,7 @@ function update(dt, t) {
   if (sel && !isNaN(sel.x)) {
     // cluster extent: the agent and its subagents, measured around where the agent is heading
     let x0 = sel.x, x1 = sel.x, y0 = sel.y, y1 = sel.y;
-    for (const s of sel.subs) if (s.x) { x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y); }
+    for (const s of onRadar(sel)) if (s.x) { x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y); }
     const [vx, vy] = viewCentre(), [tx, ty] = targets[si];
     const cx = tx + (x0 + x1) / 2 - sel.x, cy = ty + (y0 + y1) / 2 - sel.y;
     boxT.x = box.x + vx - cx; boxT.y = box.y + vy - cy;
@@ -680,8 +694,8 @@ function update(dt, t) {
     // an agent that needs you gets a fully opaque tooltip; the background fades in and out
     const tipTo = a.status === 'need' || a.status === 'approve' ? 1 : TIP_BG;
     a.tipBg = (a.tipBg ?? TIP_BG) + (tipTo - (a.tipBg ?? TIP_BG)) * Math.min(1, dt * 3);
-    const away = Math.atan2(a.y - you.y, a.x - you.x), n = a.subs.length;
-    a.subs.forEach((s, k) => {
+    const away = Math.atan2(a.y - you.y, a.x - you.x), subs = onRadar(a), n = subs.length;
+    subs.forEach((s, k) => {
       const grow = Math.min(1, (now() - s.born) * 1.2);
       let cx, cy, ang, dd;
       // subagents sit behind the agent, away from you
@@ -734,7 +748,7 @@ function update(dt, t) {
   for (const a of agents) {
     for (const p of a.pts) place(p, a.x, a.y, K);
     a.hub.x = a.x; a.hub.y = a.y;
-    for (const s of a.subs) { for (const p of s.pts) place(p, s.x, s.y, K); s.hub.x = s.x; s.hub.y = s.y; }
+    for (const s of onRadar(a)) { for (const p of s.pts) place(p, s.x, s.y, K); s.hub.x = s.x; s.hub.y = s.y; }
   }
 
   if (frameNo++ % 3 === 0 || !edges.length) buildGraph(); // the mesh changes slowly
@@ -755,7 +769,7 @@ function update(dt, t) {
       if (a.status === 'run' && Math.random() < 0.35 * dt) spikes.push({ path: [hub, from.hub], s: 0, v: 120 * K, color: [255, 255, 255] });
       else if (a.status === 'run' && Math.random() < 0.08 * dt) spikes.push({ path: [from.hub, hub], s: 0, v: 110 * K, color: rgb(HANDOFF) });
     }
-    for (const s of a.subs) {
+    for (const s of onRadar(a)) {
       if (s.dispatch) { s.dispatch = false; spikes.push({ path: [hub, s.hub], s: 0, v: 110 * K, color: rgb(HANDOFF) }); }
       if (s.status !== 'run') continue;
       if (Math.random() < 0.35 * dt) spikes.push({ path: [s.hub, hub], s: 0, v: 120 * K, color: [255, 255, 255] });
@@ -784,6 +798,8 @@ function isDim(p) {
   const o = p.owner; if (!o || o === you) return false;
   return o.status === 'done' || o.status === 'stopped' || o.status === 'paused';
 }
+// how much of a point is left: a finished subagent's cluster fades away, everything else is whole
+function visOf(p) { return p.owner?.vis ?? 1; }
 
 function draw(time) {
   ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, W, H);
@@ -809,6 +825,7 @@ function draw(time) {
     if (!e.a.owner && !e.b.owner) alpha *= edgeFade(mx, my);
     if (alpha < 0.004) continue;
     if (isDim(e.a) && isDim(e.b)) alpha *= 0.45;
+    alpha *= Math.min(visOf(e.a), visOf(e.b)); // a finished subagent fades out with its links
     if (focus && (ownerAgent(e.a) === focus || ownerAgent(e.b) === focus)) alpha = Math.min(0.85, alpha * 2.4);
     ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
     ctx.lineWidth = 0.8;
@@ -845,6 +862,8 @@ function draw(time) {
   const drawPoint = (p, alpha = 0.9) => {
     let r = p.r, col = '#ffffff';
     if (isDim(p)) alpha = Math.min(alpha, 0.4);
+    alpha *= visOf(p);
+    if (alpha < 0.01) return;
     if (!p.owner) { alpha *= edgeFade(p.x, p.y); if (alpha < 0.01) return; }
     if (p.hub && p.owner !== you) {
       const o = p.owner;
@@ -903,7 +922,7 @@ function draw(time) {
   //    cluster is open in the drawer; its size is still measured so the layout stays put.
   for (const done of [true, false]) for (const a of agents) {
     const focused = focus === a, open = selected === a.id;
-    for (const s of a.subs) {
+    for (const s of onRadar(a)) {
       if ((s.status !== 'run') !== done) continue;
       const off = s.status !== 'run';
       const role = s.role || t('subagent'), d = clip(s.description, 30);
@@ -912,7 +931,7 @@ function draw(time) {
       const sw = Math.max(w1, w2) + 14, sh = d ? 30 : 17, sx = s.x - sw / 2, sy = s.y + 20 * K;
       s.label = { x: sx, y: sy, w: sw, h: sh, shown: open };
       if (!open) continue;
-      const alpha = (off ? 0.55 : 0.9) * (focused ? 1 : 0.85);
+      const alpha = (off ? 0.55 : 0.9) * (focused ? 1 : 0.85) * s.vis;
       pill(sx, sy, sw, sh, alpha, focused && selectedSub === s.id ? 'rgba(255,255,255,0.45)' : null);
       ctx.textAlign = 'center'; ctx.globalAlpha = alpha;
       ctx.font = '600 10px ui-sans-serif, system-ui'; ctx.fillStyle = ST[s.status] || '#d2d2dc';
@@ -1062,7 +1081,7 @@ function hitTest(x, y) {
   const onLabel = agents.filter(a => inRect(a.label)).sort((p, q) => q.label.z - p.label.z)[0];
   if (onLabel) return { a: onLabel };
   for (const a of order) if (Math.hypot(x - a.x, y - a.y) < 42 * K) return { a };
-  for (const a of order) for (const s of a.subs) if (Math.hypot(x - s.x, y - s.y) < 20 * K || (s.label?.shown && inRect(s.label))) return { a, s };
+  for (const a of order) for (const s of onRadar(a)) if (Math.hypot(x - s.x, y - s.y) < 20 * K || (s.label?.shown && inRect(s.label))) return { a, s };
   return null;
 }
 canvas.addEventListener('mousemove', e => {
