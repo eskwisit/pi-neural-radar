@@ -146,6 +146,7 @@ const COPY = {
     approveNote: "Approving runs it in the session's current permission mode.",
     replyToAgent: 'Reply to the agent',
     messageAgent: 'Message the agent',
+    continueSession: 'Continue the session',
     draftPlaceholder: 'e.g. Focus on the engine lib first',
     sendToAgent: 'Send to agent',
     intervene: 'Intervene',
@@ -230,6 +231,7 @@ const COPY = {
     approveNote: '批准后将以该会话当前的权限模式运行。',
     replyToAgent: '回复智能体',
     messageAgent: '给智能体发消息',
+    continueSession: '继续会话',
     draftPlaceholder: '例如：先专注于 engine 库',
     sendToAgent: '发送给智能体',
     intervene: '干预',
@@ -1213,7 +1215,7 @@ function renderPanel() {
         <div class="note">${esc(t('approveNote'))}</div>
       </div></div>` : ''}
 
-    ${(live || a.reply) && !a.child ? `<div class="section"><h4>${esc(t(a.reply ? 'replyToAgent' : 'messageAgent'))}</h4>
+    ${!a.child ? `<div class="section"><h4>${esc(t(a.reply ? 'replyToAgent' : live ? 'messageAgent' : 'continueSession'))}</h4>
       <textarea id="draft" placeholder="${esc(t('draftPlaceholder'))}">${esc(draft)}</textarea>
       <div class="sendrow">${sendNote(a)}<button class="btn primary" data-act="send">${esc(t('sendToAgent'))}<kbd>⌘↵</kbd></button></div>
       ${a.queued?.length ? `<div class="queued"><h4>${esc(t('queuedHeading', { n: a.queued.length }))}</h4>${a.queued.map((x, i) => `<div title="${esc(x.text)}"><b>${esc(t('queuedNo', { n: i + 1 }))}</b>${esc(x.text)}</div>`).join('')}</div>` : ''}</div>` : ''}
