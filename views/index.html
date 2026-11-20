@@ -95,6 +95,19 @@
   .note { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
   .btn.confirm { border-color: rgba(255,107,154,.6); color: #ffb3c8; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .qa + .qa { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .opts { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; }
+  .opt { font: inherit; font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--text);
+    background: transparent; cursor: pointer; }
+  .opt:hover { background: rgba(255,255,255,.07); }
+  .opt.on { background: #f2f2f5; color: #0b0b0e; border-color: transparent; }
+  input.other { width: 100%; font: inherit; font-size: 12px; color: var(--text); background: rgba(0,0,0,.35); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 9px; outline: none; }
+  input.other:focus { border-color: rgba(255,255,255,.25); }
+  .risk { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; margin-left: 6px; vertical-align: 1px; }
+  .risk.low { color: #7ee2a8; } .risk.medium { color: #f5c76b; } .risk.high { color: #ff9ab5; }
+  pre.args { margin: 0 0 8px; max-height: 140px; overflow: auto; font: 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: #a3a3ad;
+    background: rgba(0,0,0,.35); border-radius: 7px; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
   @media (max-width: 760px) {
     .panel { left: 0; width: auto; top: 30%; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; transform: translateY(100%); }
   }
@@ -133,7 +146,24 @@ const COPY = {
     moreQuestionsOne: '+{n} more question',
     moreQuestionsMany: '+{n} more questions',
     answerInSession: 'Answer in session →',
-    answerNote: 'PI-Desktop only lets you answer questions in the session itself.',
+    answerNote: 'This PI-Desktop version only lets you answer questions in the session itself.',
+    askedBySub: 'Asked by the {agent} subagent',
+    otherAnswer: 'Other answer…',
+    submitAnswer: 'Answer',
+    declineAsk: 'Decline',
+    pickMany: 'Pick any',
+    hostConfirms: 'PI-Desktop asks you to allow it before it reaches the agent.',
+    permissionNeeded: 'Permission needed',
+    needsPermission: 'Needs your permission',
+    allowPrompt: 'Allow {tool} to run?',
+    risk_low: 'Low risk', risk_medium: 'Medium risk', risk_high: 'High risk',
+    allowOnce: 'Allow once',
+    allowSession: 'Allow for this chat',
+    deny: 'Deny',
+    toastAnswered: 'Answer sent',
+    toastDeclined: 'Question declined',
+    toastAllowed: 'Allowed',
+    toastDenied: 'Denied',
     waitingReply: 'Waiting for your reply',
     replyNote: 'Its turn is over and it asked you this. Your reply below goes straight to the agent.',
     planWaiting: 'Plan waiting for approval',
@@ -218,7 +248,24 @@ const COPY = {
     moreQuestionsOne: '还有 {n} 个问题',
     moreQuestionsMany: '还有 {n} 个问题',
     answerInSession: '在会话中回答 →',
-    answerNote: 'PI-Desktop 只允许在会话内回答问题。',
+    answerNote: '此版本的 PI-Desktop 只允许在会话内回答问题。',
+    askedBySub: '由子智能体 {agent} 提问',
+    otherAnswer: '其他回答…',
+    submitAnswer: '回答',
+    declineAsk: '拒绝回答',
+    pickMany: '可多选',
+    hostConfirms: 'PI-Desktop 会先请你允许，然后才发给智能体。',
+    permissionNeeded: '需要权限',
+    needsPermission: '等待你授权',
+    allowPrompt: '允许运行 {tool}？',
+    risk_low: '低风险', risk_medium: '中风险', risk_high: '高风险',
+    allowOnce: '允许一次',
+    allowSession: '本次对话内允许',
+    deny: '拒绝',
+    toastAnswered: '回答已发送',
+    toastDeclined: '已拒绝回答',
+    toastAllowed: '已允许',
+    toastDenied: '已拒绝',
     waitingReply: '等待你的回复',
     replyNote: '它的回合已结束，并向你提出了这个问题。你在下方的回复会直接发给智能体。',
     planWaiting: '计划等待批准',
@@ -299,6 +346,10 @@ const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s |
 // an agent is named after its session, as in PI-Desktop's session list
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
 const descOf = a => a.desc || a.title || t('untitledSession');
+// what the agent waits for, worded: a reply, a permission, else its status
+const needLabel = a => a.reply ? t('needsReply') : a.permission && !a.question ? t('needsPermission') : statusLabel(a.status);
+// true while you type in the drawer (a message or an answer): it is not rebuilt under you
+const typing = () => { const el = document.activeElement; return !!el && (el.id === 'draft' || el.classList?.contains('other')); };
 const taskOf = a => a.task || a.title || t('untitledSession');
 const compactNum = n => new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 // how long since the agent last did something: 12s, 4m, 2h, 3d
@@ -312,7 +363,7 @@ function ageOf(a) {
 }
 // the tooltip's second line: [state (in its colour), ' · running subagents · tokens · age' (muted)]
 function tipLine(a) {
-  const stat = a.reply ? t('needsReply') : statusLabel(a.status);
+  const stat = needLabel(a);
   const running = a.subs.filter(s => s.status === 'run').length;
   const subs = running ? plural(running, 'subagentsOne', 'subagentsMany') : '';
   // what the agent's own tool calls put into its context, in every state
@@ -486,7 +537,7 @@ function sync(model) {
     seen.add(m.id);
     let a = agents.find(x => x.id === m.id);
     if (!a) { a = mkAgent(m.id, m.parent); agents.push(a); }
-    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, effort: m.effort || '', toolTokens: m.toolTokens || 0, question: m.question, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [], lastCall: m.lastCall || null, queued: m.queued || [],
+    Object.assign(a, { desc: m.desc, title: m.title, task: m.task, status: m.status, model: m.model, effort: m.effort || '', toolTokens: m.toolTokens || 0, question: m.question, permission: m.permission || null, reply: m.reply, replyContext: m.replyContext, plan: m.plan, active: m.active, log: m.log || [], lastCall: m.lastCall || null, queued: m.queued || [],
       session: m.session || m.id, parent: m.parent || null, child: !!m.child, tokens: m.tokens || 0 });
     if (m.child && !m.title) a.title = t('mainAgent');
     a.target = attentionFor(m.status);
@@ -516,7 +567,7 @@ function sync(model) {
   // the drawer is rebuilt only when its agent's data changed, so clicks are never lost
   const m = (model.agents || []).find(x => x.id === selected);
   const sig = m ? JSON.stringify(m) : '';
-  if (selected && sig !== panelSig && document.activeElement?.id !== 'draft') { panelSig = sig; renderPanel(); }
+  if (selected && sig !== panelSig && !typing()) { panelSig = sig; renderPanel(); }
   synced = true;
 }
 
@@ -530,7 +581,7 @@ let mainVersion = null;
 function reloadOnUpdate(version) {
   if (typeof version !== 'string' || !version) return false;
   if (mainVersion === null) mainVersion = version;
-  if (version === mainVersion || document.activeElement?.id === 'draft') return false;
+  if (version === mainVersion || typing()) return false;
   location.reload();
   return true;
 }
@@ -1176,7 +1227,9 @@ const armed = new Map(); // two-step confirmation for Stop / Abort
 function renderPanel() {
   const a = agents.find(x => x.id === selected);
   if (!a) { panel.classList.remove('open'); selected = null; computeView(); return; }
-  const focused = document.activeElement?.id === 'draft';
+  const focusedEl = document.activeElement;
+  const focused = focusedEl?.id === 'draft';
+  const focusedAns = focusedEl?.classList?.contains('other') ? focusedEl.id : '';
   const keep = sel => panel.querySelector(sel)?.scrollTop ?? 0;
   const logScroll = keep('.log'), subsScroll = keep('.subs .scroll'), topScroll = keep('.top');
   const hasOpen = subsOpen || logOpen;
@@ -1190,19 +1243,22 @@ function renderPanel() {
     <div class="head">
     <h2><span class="dot" style="color:${col}"></span><span class="name" title="${esc(a.title || t('untitledSession'))}">${esc(a.title || t('untitledSession'))}</span></h2>
     <div class="task" title="${esc(taskOf(a))}">${esc(taskOf(a))}</div>
-    <span class="status" style="color:${col}">${esc(a.reply ? t('needsReply') : statusLabel(a.status))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
+    <span class="status" style="color:${col}">${esc(needLabel(a))}${a.active ? ' · ' + esc(t('thisSession')) : ''}</span>
     <div class="meta" style="margin-top:10px"><span>${esc(modelLine(a))}</span></div>
     ${a.child ? `<div class="meta">${esc(t('inSession', { title: agents.find(x => x.id === a.parent)?.title || t('untitledSession') }))}</div>` : ''}
     </div>
 
 
-    ${q ? `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
+    ${q?.requestId ? askForm(a, q) : ''}
+    ${q && !q.requestId ? `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
       <div class="ask">${q.ctx ? `<div class="ctx">${esc(q.ctx)}</div>` : ''}<p>${esc(q.q)}</p>
         ${q.opts?.length ? `<div class="chips">${q.opts.map(o => `<span>${esc(o)}</span>`).join('')}</div>` : ''}
         ${q.more ? `<div class="note">${esc(plural(q.more, 'moreQuestionsOne', 'moreQuestionsMany'))}</div>` : ''}
         <div class="row"><button class="btn primary" data-act="open">${esc(t('answerInSession'))}</button></div>
         <div class="note">${esc(t('answerNote'))}</div>
       </div></div>` : ''}
+
+    ${a.permission ? permissionCard(a.permission) : ''}
 
     ${a.reply ? `<div class="section"><h4>${esc(t('waitingReply'))}</h4>
       <div class="ask">${a.replyContext ? `<div class="ctx">${esc(a.replyContext)}</div>` : ''}<p>${esc(a.reply)}</p>
@@ -1253,6 +1309,12 @@ function renderPanel() {
     if (focused) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
   }
   panel.querySelectorAll('[data-act]').forEach(b => b.onclick = () => onAction(a, b.dataset.act));
+  panel.querySelectorAll('.opt').forEach(b => b.onclick = () => pickOption(a, +b.dataset.q, +b.dataset.o));
+  panel.querySelectorAll('input.other').forEach(el => {
+    el.oninput = () => { const d = answerDraft(a.question); if (d[+el.dataset.q]) d[+el.dataset.q].text = el.value; };
+    el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); onAction(a, 'answer'); } };
+  });
+  if (focusedAns) { const el = panel.querySelector('#' + focusedAns); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   panel.querySelectorAll('.fold').forEach(f => f.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction(a, f.dataset.act); } }));
 }
 
@@ -1293,8 +1355,69 @@ function announce(events) {
   }
 }
 
+// ---------- question cards and permission prompts ----------
+// your answers so far, per open question card: per question the picked options and typed text
+const answerDrafts = new Map(); // requestId → [{ values: [], text: '' }]
+function answerDraft(q) {
+  let d = answerDrafts.get(q.requestId);
+  if (!d || d.length !== q.questions.length) { d = q.questions.map(() => ({ values: [], text: '' })); answerDrafts.set(q.requestId, d); }
+  return d;
+}
+function askForm(a, q) {
+  const d = answerDraft(q);
+  return `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
+    <div class="ask">${q.ctx ? `<div class="ctx">${esc(q.ctx)}</div>` : ''}
+      ${q.agentName ? `<div class="note" style="margin:0 0 8px">${esc(t('askedBySub', { agent: q.agentName }))}</div>` : ''}
+      ${q.questions.map((x, i) => `<div class="qa">
+        <p>${esc(x.q)}${x.multi ? ` <span class="note">· ${esc(t('pickMany'))}</span>` : ''}</p>
+        ${x.opts.length ? `<div class="opts">${x.opts.map((o, k) => `<button class="opt ${d[i].values.includes(o.label) ? 'on' : ''}" data-q="${i}" data-o="${k}" ${o.description ? `title="${esc(o.description)}"` : ''}>${esc(o.label)}</button>`).join('')}</div>` : ''}
+        <input class="other" id="ans-${i}" data-q="${i}" placeholder="${esc(t('otherAnswer'))}" value="${esc(d[i].text)}" />
+      </div>`).join('')}
+      <div class="row"><button class="btn primary" data-act="answer">${esc(t('submitAnswer'))}</button><button class="btn danger" data-act="decline">${esc(t('declineAsk'))}</button><button class="btn" data-act="open">${esc(t('openSession'))}</button></div>
+      <div class="note">${esc(t('hostConfirms'))}</div>
+    </div></div>`;
+}
+function permissionCard(p) {
+  return `<div class="section"><h4>${esc(t('permissionNeeded'))}</h4>
+    <div class="ask">
+      ${p.agentName ? `<div class="note" style="margin:0 0 8px">${esc(t('askedBySub', { agent: p.agentName }))}</div>` : ''}
+      <p>${esc(t('allowPrompt', { tool: p.tool }))}<span class="risk ${esc(p.risk)}">${esc(t('risk_' + p.risk))}</span></p>
+      ${p.reason ? `<div class="ctx">${esc(p.reason)}</div>` : ''}
+      ${p.args ? `<pre class="args">${esc(p.args)}</pre>` : ''}
+      <div class="row"><button class="btn primary" data-act="allow-once">${esc(t('allowOnce'))}</button><button class="btn" data-act="allow-session">${esc(t('allowSession'))}</button><button class="btn danger" data-act="deny">${esc(t('deny'))}</button><button class="btn" data-act="open">${esc(t('openSession'))}</button></div>
+      <div class="note">${esc(t('hostConfirms'))}</div>
+    </div></div>`;
+}
+function pickOption(a, i, k) {
+  const q = a.question, x = q?.questions?.[i], o = x?.opts?.[k];
+  if (!o) return;
+  const d = answerDraft(q)[i];
+  const on = d.values.includes(o.label);
+  d.values = x.multi ? (on ? d.values.filter(v => v !== o.label) : [...d.values, o.label]) : (on ? [] : [o.label]);
+  renderPanel();
+}
+async function answer(a, decline) {
+  const q = a.question;
+  if (!q?.requestId) return;
+  const d = answerDraft(q);
+  // per question: the picked options plus what you typed (a single-choice question takes your
+  // text instead of a picked option), or null to skip it; declining skips them all
+  const answers = decline ? q.questions.map(() => null) : q.questions.map((x, i) => {
+    const text = d[i].text.trim();
+    const vals = x.multi ? [...d[i].values, ...(text ? [text] : [])] : text ? [text] : d[i].values;
+    return vals.length ? vals : null;
+  });
+  const r = await act(a, { action: 'answer', requestId: q.requestId, answers }, decline ? '#ff6b9a' : YOU_SIGNAL, t(decline ? 'toastDeclined' : 'toastAnswered'));
+  if (r?.ok) answerDrafts.delete(q.requestId);
+}
+
 function onAction(a, k) {
   if (k === 'close') return select(null);
+  if (k === 'answer' || k === 'decline') return answer(a, k === 'decline');
+  if (k === 'allow-once' || k === 'allow-session' || k === 'deny') {
+    if (!a.permission?.requestId) return;
+    return act(a, { action: 'permission', requestId: a.permission.requestId, decision: k }, k === 'deny' ? '#ff6b9a' : YOU_SIGNAL, t(k === 'deny' ? 'toastDenied' : 'toastAllowed'));
+  }
   if (k === 'log') { logOpen = !logOpen; return renderPanel(); }
   if (k === 'subs') { subsOpen = !subsOpen; return renderPanel(); }
   if (k === 'open') return act(a, { action: 'open' });
