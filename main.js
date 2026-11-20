@@ -702,7 +702,9 @@ async function poll() {
     if (asked && isActive) mem.seenReply = asked;
     const reply = asked && !(mem.seenReply === asked && !isActive) ? asked : null;
     if (!asked) mem.seenReply = "";
-    const statusKey = question || permission || reply ? "need" : plan ? "approve" : running ? "run" : "done";
+    // a question card waits for your answer ("answer"); a permission prompt or a question in the
+    // agent's last message needs you ("need"); a plan or goal waits for approval ("approve")
+    const statusKey = question ? "answer" : permission || reply ? "need" : plan ? "approve" : running ? "run" : "done";
     const title = s.title; // empty: the view shows "Untitled session" in the user's language
     const agent = {
       id: s.id,
@@ -742,8 +744,9 @@ async function poll() {
     const newSubagent = runCount > (mem.subCount || 0);
     // a new question card or permission prompt is news even while the agent already needed you
     const needId = str(question?.requestId || permission?.requestId);
-    const needsYouNow = (statusKey === "need" || statusKey === "approve") && (mem.attention !== statusKey || (needId && mem.needId !== needId));
-    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", needId, updatedAt: s.updatedAt, planKey, agent, mains, wasActive: isActive });
+    const waiting = WAITING.includes(statusKey);
+    const needsYouNow = waiting && (mem.attention !== statusKey || (needId && mem.needId !== needId));
+    memory.set(s.id, { ...mem, running, subCount: runCount, attention: waiting ? statusKey : "", needId, updatedAt: s.updatedAt, planKey, agent, mains, wasActive: isActive });
     // the first poll only learns the baseline: agents already running at load do not pop the view
     if (!firstPoll) maybeReveal({ becameRunning, newSubagent, needsYouNow });
     if (!firstPoll && needsYouNow) void notifyNeed(agent);
@@ -899,6 +902,7 @@ async function act({ action, sessionId, text, proposal, decision, requestId, ans
 }
 
 const PERMISSION_MODES = ["ask", "accept-edits", "auto"];
+const WAITING = ["need", "answer", "approve"]; // states in which an agent waits for you
 const PERMISSION_DECISIONS = ["allow-once", "allow-session", "deny"];
 const validAnswer = (x) => x === null || (Array.isArray(x) && x.length <= 20 && x.every((v) => typeof v === "string" && v.length <= 4000));
 
