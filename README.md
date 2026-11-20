@@ -28,8 +28,9 @@ A live neural map of your PI-Desktop agents and their subagents, shown in the se
   to a fully opaque background, and back once it no longer waits. The hovered agent's tooltip, and then the open one's, are drawn on top. A subagent's tooltip
   shows only while its agent's cluster is open in the drawer, and reads as its role (`explorer`,
   `fixer`, …) with the task it was given.
-- **Distance means attention:** an agent waiting for you sits on the inner ring (its turn ended
-  with a question for you, or a plan waits for approval), working agents further out, finished
+- **Distance means attention:** an agent waiting for you sits on the inner ring (it asks you a
+  question, waits for permission to run a tool, ended its turn with a question for you, or a plan
+  waits for approval), working agents further out, finished
   ones at the edge. An agent keeps its own direction from you for
   life; it only moves closer or further away.
 - **New empty sessions stay off the radar.** A session with no message yet (PI-Desktop's
@@ -50,8 +51,8 @@ Setting **Open the radar automatically** (Plugins → Neural Radar → Settings)
 
 ## Notifications
 
-When an agent starts needing you (it ends its turn with a question, waits for your reply, or a
-Plan or Goal waits for approval), the radar shows a system notification with the session name and
+When an agent starts needing you (it opens a question card, asks permission to run a tool, ends
+its turn with a question, or a Plan or Goal waits for approval), the radar shows a system notification with the session name and
 what it asks, and PI-Desktop shows the same text as an in-app notice. The in-app notice always
 goes out, because macOS can accept a system notification and still not show it (notifications off
 or never allowed for PI-Desktop, Focus mode). Each attempt is written to the plugin log. You get one notification each time an agent
@@ -82,6 +83,13 @@ the host does not record every model call of a subagent in the transcript.
 open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
 drawer from a subagent unfolds Subagents on it. The drawer offers:
 
+- **Answer** a question card the agent opened mid-turn: pick the options (or type your own answer)
+  for each question and click **Answer**, or **Decline** the card
+- **Allow once / Allow for this chat / Deny** a tool waiting for your permission; the drawer shows
+  the tool, its risk, the reason and the arguments, and which subagent asks
+- Answering a question card and answering a permission prompt go through PI-Desktop's own
+  confirmation: it asks you to allow each one before it reaches the agent. Both need PI-Desktop
+  0.23 or later; on an older version the drawer shows the question and sends you to the session
 - **Reply**: when an agent ended its turn asking you something, the drawer shows what it asked and
   your reply goes straight to it
 - **Approve / Reject** a Plan or Goal that is waiting for you. Approving runs it in the session's
@@ -100,7 +108,7 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 | Permission | Why |
 |---|---|
 | `ui.view` | the radar view in the work panel, and opening it automatically |
-| `desktop.control` | reading sessions, agent status, subagents and pending plans; switching session, sending a message, approving a plan, stopping an agent |
+| `desktop.control` | reading sessions, agent status, subagents, pending plans, question cards and permission prompts; switching session, sending a message, approving a plan, answering a question card or permission prompt, stopping an agent |
 | `notify` | a system notification and an in-app notice when an agent needs you |
 
 `desktop.control` is a high-risk permission: it lets the plugin act on your sessions. The plugin only
@@ -114,10 +122,13 @@ nothing besides its settings and that picture.
 It **can**:
 
 - read your recent sessions: their titles, agent status, the last 60 messages of each
-  transcript, subagents and pending Plan / Goal approvals. This is shown only in the radar view, on
+  transcript, subagents, pending Plan / Goal approvals, open question cards and tool permission
+  prompts. This is shown only in the radar view, on
   your machine
 - when you click: open a session, send the text you typed to the agent, approve or reject the plan
-  shown in the drawer, or stop or abort an agent. Stop and Abort need a second click within 3 seconds
+  shown in the drawer, answer or decline the question card shown in the drawer, allow or deny the
+  tool shown in the drawer, or stop or abort an agent. Stop and Abort need a second click within
+  3 seconds; answers and permission decisions also need your OK in PI-Desktop's own dialog
 - open its own view in the work panel when an agent starts working or needs you (setting
   **Open the radar automatically**, which can be turned off)
 - save the picture you pick by clicking your circle in its data folder; right-clicking your
@@ -129,8 +140,7 @@ It **cannot** and does not:
   sessions leaves your computer
 - write files, except your picture (`avatar.json` in its data folder), run programs or load
   code
-- act on a session without your click, answer an agent's mid-turn question cards or tool
-  permission prompts, or change a session's permission mode (approving a plan keeps the session's
+- act on a session without your click, or change a session's permission mode (approving a plan keeps the session's
   own mode, or uses "ask"). A message you send to a busy agent waits in a queue and goes out when
   its turn ends
 - store anything besides its settings and your picture
@@ -148,14 +158,12 @@ Details for reviewers, including every host operation it calls, are in
   agent waiting for your reply stays up to 2 hours, or until you open its session and leave it
   without replying: then it counts as finished. Subagents from an earlier turn only stay while
   they are still running.
-- **Question cards asked mid-turn (`asktool`) and tool-permission prompts (a command waiting for
-  your approval) are not visible.** PI-Desktop lets plugins answer them (`agent/askTool/resolve`,
-  `tool/resolvePermission`), but the request ids those need only come from
-  `agent/pendingInteractive`, which is not a plugin operation. Plugins get no event for them,
-  `agent/getStatus` reports no pending confirmation for local sessions, and a pending tool call
-  only reaches the transcript once it completes. The radar
-  therefore sees such a question only after it was answered. Plan and Goal approvals, and
-  questions asked in an agent's final message, are detected and answered from the radar.
+- **Question cards and permission prompts need PI-Desktop 0.23 or later.** The radar reads them
+  with `agent/pendingInteractive` while an agent runs (no event tells plugins about them, so they
+  show within one poll, about 2 s). On an older PI-Desktop, which lacks that operation, a question
+  card is read from the transcript and can only be answered in the session, and permission
+  prompts are not visible at all. The drawer shows one question card and one permission prompt
+  per session at a time, the oldest first; the next one follows once it is answered.
 - Per-subagent stop is not available to plugins; Stop and Abort act on the whole agent.
 - The radar polls (every 2 s while an agent runs, every 6 s otherwise) because the host sends
   plugins no "turn started" event. The view refreshes every second while shown and every 5 s
