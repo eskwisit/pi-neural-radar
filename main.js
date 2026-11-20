@@ -8,20 +8,21 @@
  * `autoOpen` setting, and carries out the actions the user picks in the view's drawer.
  *
  * Data comes from the host's desktop control operations (`desktop.control`):
- *   session/list, agent/getStatus, session/get, plans/pending    — read
+ *   session/list, agent/getStatus, session/get, plans/pending,
+ *   agent/pendingInteractive                                     — read
  *   session/open, agent/prompt, agent/stop, agent/abort          — act on the user's click
- *   plans/resolve                                                — "dangerous": sent with confirm
+ *   plans/resolve, agent/askTool/resolve, tool/resolvePermission — "dangerous": sent with
+ *                                     confirm; the host asks the user to allow each call
  * The host has no "turn started" event for plugins, so the radar polls. It polls fast while
  * something is running and slowly while everything is idle.
  * When an agent starts needing you, a system notification tells you (`notify`; an in-app notice
  * when the system does not show it), unless the `notify` setting is off.
  *
- * Not reachable for plugins: question cards an agent opens mid-turn (`asktool`) and tool
- * permission prompts (a command waiting for your approval). `agent/askTool/resolve` and
- * `tool/resolvePermission` exist, but the request ids they need only come from
- * `agent/pendingInteractive`, which is not a plugin operation; plugins get no event for them,
- * `agent/getStatus` reports `pendingToolConfirmations: 0` for local sessions, and a pending tool
- * call is not in the transcript until it completes.
+ * Question cards an agent opens mid-turn (`asktool`) and tool permission prompts (a command
+ * waiting for your approval) come from `agent/pendingInteractive` (PI-Desktop 0.23+), which
+ * carries the request ids the resolve operations need. On an older host that operation does not
+ * exist: the radar then reads open questions from the transcript and can only send you to the
+ * session to answer them, and it cannot see permission prompts at all.
  * View channel: window.pluginBridge.invoke("radar.*", payload) → onPanelInvoke.
  */
 
@@ -380,6 +381,72 @@ function pendingQuestionFrom(messages) {
   return null;
 }
 
+// ---------- question cards and permission prompts (agent/pendingInteractive) ----------
+const MAX_OPTIONS = 8;
+const optionOf = (o) => (typeof o === "string" ? { label: o } : { label: str(o?.label), ...(str(o?.description) ? { description: str(o.description) } : {}) });
+
+/**
+ * An open question card from the host, answerable from the drawer: every question with its
+ * options (`questions`), the first one flattened for the tooltip and notification (`q`, `opts`,
+ * `more`), and what the agent said leading up to it (`ctx`).
+ */
+function askOf(ask, messages) {
+  const questions = arr(ask?.questions).map((x) => ({
+    q: str(x?.question),
+    opts: arr(x?.options).map(optionOf).filter((o) => o.label).slice(0, MAX_OPTIONS),
+    multi: x?.multiSelect === true,
+  })).filter((x) => x.q);
+  const requestId = str(ask?.requestId);
+  if (!requestId || !questions.length) return null;
+  const callId = str(ask?.toolCallId);
+  let at = callId ? messages.findIndex((m) => blocksOf(m).some((b) => str(b?.callId) === callId)) : -1;
+  if (at < 0) at = messages.length - 1;
+  return {
+    requestId,
+    q: questions[0].q,
+    more: questions.length - 1,
+    opts: questions[0].opts.map((o) => o.label),
+    questions,
+    agentName: str(ask?.agentName),
+    ctx: turnContext(messages, at + 1),
+  };
+}
+
+/** A tool waiting for your permission: what it wants to run and why. */
+function permissionOf(p) {
+  const requestId = str(p?.requestId);
+  if (!requestId) return null;
+  const raw = p?.argsPreview ?? p?.args;
+  let args = typeof raw === "string" ? raw : raw == null ? "" : JSON.stringify(raw, null, 1);
+  args = clipText(args.trim(), 600);
+  return {
+    requestId,
+    tool: str(p?.toolName) || "tool",
+    target: toolTarget(raw),
+    reason: clipText(str(p?.reason), 300),
+    risk: ["low", "medium", "high"].includes(p?.risk) ? p.risk : "high",
+    agentName: str(p?.agentName),
+    args,
+  };
+}
+
+// false once the host turned out not to have agent/pendingInteractive (before 0.23)
+let interactiveOn = true;
+// (the host answers NOT_FOUND "operation is not exposed: …" for an operation it does not have)
+const isUnsupportedOp = (e) => /operation is not exposed|unknown (desktop )?operation/i.test(str(e?.message));
+
+/** The session's open question cards and permission prompts, or null when the host cannot tell. */
+async function pendingInteractive(sessionId) {
+  if (!interactiveOn) return null;
+  try {
+    const r = await op("agent/pendingInteractive", [{ sessionId }]);
+    return { asks: arr(r?.asks), permissions: arr(r?.permissions) };
+  } catch (error) {
+    if (isUnsupportedOp(error)) interactiveOn = false;
+    return null;
+  }
+}
+
 /**
  * "Your turn": the agent's turn is over, its last message is its own (you have not replied)
  * and that message asks you something. Returns `{ ask, context }` — the part that asks and a
@@ -601,7 +668,15 @@ async function poll() {
     // (a failed read is not an empty session; one with queued messages stays)
     if (detail && !messages.length && !running && !planKey && !outbox.get(s.id)?.length) continue;
 
-    const question = running ? pendingQuestionFrom(messages) : null;
+    // open question cards and permission prompts, answerable from the drawer; without the host
+    // read (older PI-Desktop, or a native-pi session it does not track) the transcript still
+    // shows an open question, which can then only be answered in the session
+    const interactive = running ? await pendingInteractive(s.id) : null;
+    const hostKnows = interactive && !s.id.startsWith("native-pi:");
+    const question = !running ? null
+      : hostKnows ? arr(interactive.asks).map((x) => askOf(x, messages)).find(Boolean) ?? null
+      : pendingQuestionFrom(messages);
+    const permission = hostKnows ? arr(interactive.permissions).map(permissionOf).find(Boolean) ?? null : null;
     let plan = pendingPlan ? planOf(pendingPlan) : null;
     if (!plan && planKey) {
       // the runtime reports a pending plan the global read did not carry: ask for this session
@@ -627,7 +702,7 @@ async function poll() {
     if (asked && isActive) mem.seenReply = asked;
     const reply = asked && !(mem.seenReply === asked && !isActive) ? asked : null;
     if (!asked) mem.seenReply = "";
-    const statusKey = question || reply ? "need" : plan ? "approve" : running ? "run" : "done";
+    const statusKey = question || permission || reply ? "need" : plan ? "approve" : running ? "run" : "done";
     const title = s.title; // empty: the view shows "Untitled session" in the user's language
     const agent = {
       id: s.id,
@@ -641,6 +716,7 @@ async function poll() {
       toolTokens: toolTok,
       active: s.id === activeSessionId,
       question,
+      permission,
       reply,
       replyContext: reply ? awaiting.context : "",
       plan,
@@ -664,8 +740,10 @@ async function poll() {
     const runCount = subs.filter((x) => x.status === "run").length;
     const becameRunning = running && !mem.running;
     const newSubagent = runCount > (mem.subCount || 0);
-    const needsYouNow = (statusKey === "need" || statusKey === "approve") && mem.attention !== statusKey;
-    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", updatedAt: s.updatedAt, planKey, agent, mains, wasActive: isActive });
+    // a new question card or permission prompt is news even while the agent already needed you
+    const needId = str(question?.requestId || permission?.requestId);
+    const needsYouNow = (statusKey === "need" || statusKey === "approve") && (mem.attention !== statusKey || (needId && mem.needId !== needId));
+    memory.set(s.id, { ...mem, running, subCount: runCount, attention: statusKey === "need" || statusKey === "approve" ? statusKey : "", needId, updatedAt: s.updatedAt, planKey, agent, mains, wasActive: isActive });
     // the first poll only learns the baseline: agents already running at load do not pop the view
     if (!firstPoll) maybeReveal({ becameRunning, newSubagent, needsYouNow });
     if (!firstPoll && needsYouNow) void notifyNeed(agent);
@@ -680,8 +758,8 @@ async function poll() {
 
 // what a notification says, in the user's language
 const NOTE = {
-  en: { question: "{title} has a question for you", reply: "{title} is waiting for your reply", plan: "{title}: plan waiting for approval", goal: "{title}: goal waiting for approval", untitled: "Untitled session" },
-  zh: { question: "{title} 有问题要问你", reply: "{title} 正在等待你的回复", plan: "{title}：计划等待批准", goal: "{title}：目标等待批准", untitled: "未命名会话" },
+  en: { question: "{title} has a question for you", permission: "{title} asks permission to run {tool}", reply: "{title} is waiting for your reply", plan: "{title}: plan waiting for approval", goal: "{title}: goal waiting for approval", untitled: "Untitled session" },
+  zh: { question: "{title} 有问题要问你", permission: "{title} 请求允许运行 {tool}", reply: "{title} 正在等待你的回复", plan: "{title}：计划等待批准", goal: "{title}：目标等待批准", untitled: "未命名会话" },
 };
 
 /**
@@ -695,9 +773,10 @@ async function notifyNeed(agent) {
   if (!notifyOn) return;
   const lang = await Promise.resolve(pi.app?.getLocale?.()).catch(() => "");
   const L = str(lang).toLowerCase().startsWith("zh") ? NOTE.zh : NOTE.en;
-  const kind = agent.question ? "question" : agent.reply ? "reply" : agent.plan?.kind === "goal" ? "goal" : "plan";
-  const title = L[kind].replace("{title}", clipText(agent.title || L.untitled, 60));
-  const body = clipText(str(agent.question?.q || agent.reply || agent.plan?.title || agent.plan?.question || agent.desc).replace(/\s+/g, " ").trim(), 180);
+  const kind = agent.question ? "question" : agent.permission ? "permission" : agent.reply ? "reply" : agent.plan?.kind === "goal" ? "goal" : "plan";
+  const title = L[kind].replace("{title}", clipText(agent.title || L.untitled, 60)).replace("{tool}", str(agent.permission?.tool));
+  const perm = agent.permission ? [agent.permission.target, agent.permission.reason].filter(Boolean).join(" · ") : "";
+  const body = clipText(str(agent.question?.q || perm || agent.reply || agent.plan?.title || agent.plan?.question || agent.desc).replace(/\s+/g, " ").trim(), 180);
   let system;
   try {
     const r = await pi.ui.showNativeNotification({ title, body });
@@ -752,7 +831,7 @@ function pollSoon() {
 }
 
 // ---------- actions from the drawer ----------
-async function act({ action, sessionId, text, proposal, decision }) {
+async function act({ action, sessionId, text, proposal, decision, requestId, answers }) {
   const id = str(sessionId);
   if (!id) return { ok: false, message: "sessionId required" };
   switch (action) {
@@ -790,6 +869,24 @@ async function act({ action, sessionId, text, proposal, decision }) {
       settle(id, { plan: null, status: approve ? "run" : "done" });
       return { ok: true };
     }
+    case "answer": {
+      // your answers to a question card: per question the picked labels (and typed text), or
+      // null to skip it; all null declines the card. The host asks you to allow the call.
+      const rid = str(requestId);
+      if (!rid) return { ok: false, code: "not_pending", message: "This question is no longer open" };
+      if (!Array.isArray(answers) || !answers.length || !answers.every(validAnswer)) return { ok: false, message: "answers must list, per question, the chosen options or null" };
+      await op("agent/askTool/resolve", [{ sessionId: id, requestId: rid, answers: answers.map((x) => (x === null ? null : x.map((v) => str(v).trim()).filter(Boolean))) }], true);
+      settle(id, { question: null, status: "run" });
+      return { ok: true };
+    }
+    case "permission": {
+      const rid = str(requestId);
+      if (!rid) return { ok: false, code: "not_pending", message: "This permission request is no longer open" };
+      if (!PERMISSION_DECISIONS.includes(decision)) return { ok: false, message: `unknown decision: ${decision}` };
+      await op("tool/resolvePermission", [{ requestId: rid, decision }], true);
+      settle(id, { permission: null, status: "run" });
+      return { ok: true };
+    }
     case "stop":
       await op("agent/stop", [{ sessionId: id }]);
       return { ok: true };
@@ -802,6 +899,8 @@ async function act({ action, sessionId, text, proposal, decision }) {
 }
 
 const PERMISSION_MODES = ["ask", "accept-edits", "auto"];
+const PERMISSION_DECISIONS = ["allow-once", "allow-session", "deny"];
+const validAnswer = (x) => x === null || (Array.isArray(x) && x.length <= 20 && x.every((v) => typeof v === "string" && v.length <= 4000));
 
 // ---------- messages waiting for the agent's turn to end ----------
 const OUTBOX_MAX = 20; // per session
@@ -853,7 +952,7 @@ const withQueues = (agents) => agents.map((a) => (a.child ? a : { ...a, queued: 
 function settle(id, patch) {
   model = { ...model, agents: model.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)) };
   const mem = memory.get(id);
-  if (mem) memory.set(id, { ...mem, attention: "", seenReply: "", planKey: "", agent: undefined });
+  if (mem) memory.set(id, { ...mem, attention: "", needId: "", seenReply: "", planKey: "", agent: undefined });
 }
 
 async function onPanelInvoke(channel, payload) {
