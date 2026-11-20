@@ -95,7 +95,12 @@
   .note { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
   .btn.confirm { border-color: rgba(255,107,154,.6); color: #ffb3c8; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-  .qa + .qa { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .steps { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; }
+  .steps .of { color: var(--muted); font-size: 11px; margin-right: 4px; }
+  .step { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: transparent;
+    color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
+  .step.done { border-color: rgba(255,201,102,.6); color: var(--approve); }
+  .step.cur { background: var(--approve); border-color: transparent; color: #0b0b0e; font-weight: 600; }
   .opts { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 6px; }
   .opt { font: inherit; font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--text);
     background: transparent; cursor: pointer; }
@@ -129,6 +134,7 @@ const COPY = {
     title: 'Neural Radar',
     status_need: 'Needs you',
     status_approve: 'Awaiting approval',
+    status_answer: 'Awaiting answer',
     status_run: 'Working',
     status_done: 'Done',
     status_paused: 'Paused',
@@ -148,6 +154,9 @@ const COPY = {
     answerInSession: 'Answer in session →',
     answerNote: 'This PI-Desktop version only lets you answer questions in the session itself.',
     askedBySub: 'Asked by the {agent} subagent',
+    stepOf: '{i} of {n}',
+    nextQuestion: 'Next',
+    prevQuestion: 'Back',
     otherAnswer: 'Other answer…',
     submitAnswer: 'Answer',
     declineAsk: 'Decline',
@@ -231,6 +240,7 @@ const COPY = {
     title: '神经雷达',
     status_need: '需要你处理',
     status_approve: '等待批准',
+    status_answer: '等待回答',
     status_run: '工作中',
     status_done: '已完成',
     status_paused: '已暂停',
@@ -250,6 +260,9 @@ const COPY = {
     answerInSession: '在会话中回答 →',
     answerNote: '此版本的 PI-Desktop 只允许在会话内回答问题。',
     askedBySub: '由子智能体 {agent} 提问',
+    stepOf: '第 {i} / {n} 题',
+    nextQuestion: '下一题',
+    prevQuestion: '上一题',
     otherAnswer: '其他回答…',
     submitAnswer: '回答',
     declineAsk: '拒绝回答',
@@ -345,6 +358,8 @@ const modelLine = x => [x.model, x.effort && x.effort !== 'omit' ? x.effort : ''
 const statusLabel = s => (COPY.en['status_' + s] ? t('status_' + s) : String(s || ''));
 // an agent is named after its session, as in PI-Desktop's session list
 const nameOf = (a, max = 34) => clip(a.title || t('untitledSession'), max);
+// the agent waits for you: a question, an answer to a question card, or an approval
+const waits = a => a.status === 'need' || a.status === 'answer' || a.status === 'approve';
 const descOf = a => a.desc || a.title || t('untitledSession');
 // what the agent waits for, worded: a reply, a permission, else its status
 const needLabel = a => a.reply ? t('needsReply') : a.permission && !a.question ? t('needsPermission') : statusLabel(a.status);
@@ -379,7 +394,7 @@ function logLine(l) {
   }
 }
 
-const ST = { need: '#ff6b9a', approve: '#ffc966', run: '#5eead4', paused: '#8a8f9c', done: '#6b7080', stopped: '#6b7080' };
+const ST = { need: '#ff6b9a', answer: '#ffc966', approve: '#ffc966', run: '#5eead4', paused: '#8a8f9c', done: '#6b7080', stopped: '#6b7080' };
 const YOU_SIGNAL = '#d8c8ff';
 const TIP_BG = 0.82; // tooltip background opacity; it fades to 1 while the agent needs you
 const HANDOFF = '#8fb8ff'; // agent hands a task to a subagent
@@ -424,7 +439,7 @@ function viewCentre() {
   return [w / 2, (top + H) / 2];
 }
 // status tiers, each at its own distance from you so they never blur together
-function tierOf(a) { return { need: 0, approve: 1, run: 2, paused: 2, done: 3, stopped: 3 }[a.status] ?? 2; }
+function tierOf(a) { return { need: 0, answer: 0, approve: 1, run: 2, paused: 2, done: 3, stopped: 3 }[a.status] ?? 2; }
 const TIER_R = [0.44, 0.66, 0.87, 1.02];
 const youAnchor = () => [box.x + box.w / 2, box.y + box.h / 2];
 // each agent keeps its own lane; when its status changes it only moves closer to you or further away
@@ -528,7 +543,7 @@ let draft = '', connected = null, panelSig = '', lastError = null;
 let logOpen = false; // the Activity section starts folded for each agent you open
 let subsOpen = false; // so does Subagents, unless you open the drawer from one of its subagents
 let revealSub = false; // scroll the picked subagent into view on the next render
-function attentionFor(s) { return { need: 0.93, approve: 0.75, run: 0.2, paused: 0.35, stopped: 0.03, done: 0.04 }[s] ?? 0.2; }
+function attentionFor(s) { return { need: 0.93, answer: 0.93, approve: 0.75, run: 0.2, paused: 0.35, stopped: 0.03, done: 0.04 }[s] ?? 0.2; }
 
 let synced = false; // false until the first state arrives
 function sync(model) {
@@ -745,7 +760,7 @@ function update(dt, t) {
     a.y = lerp(a.y, targets[i][1], Math.min(1, dt * 1.8));
     a.flash = Math.max(0, a.flash - dt * 1.8);
     // an agent that needs you gets a fully opaque tooltip; the background fades in and out
-    const tipTo = a.status === 'need' || a.status === 'approve' ? 1 : TIP_BG;
+    const tipTo = waits(a) ? 1 : TIP_BG;
     a.tipBg = (a.tipBg ?? TIP_BG) + (tipTo - (a.tipBg ?? TIP_BG)) * Math.min(1, dt * 3);
     const away = Math.atan2(a.y - you.y, a.x - you.x), subs = onRadar(a), n = subs.length;
     subs.forEach((s, k) => {
@@ -808,7 +823,7 @@ function update(dt, t) {
 
   // fire
   for (const a of agents) {
-    const asking = a.status === 'need' || a.status === 'approve';
+    const asking = waits(a);
     const hub = a.hub;
     const rate = asking ? 1.1 * a.attention : a.status === 'run' ? 0.12 : 0;
     if (Math.random() < rate * dt) {
@@ -924,7 +939,7 @@ function draw(time) {
     if (p.hub && p.owner !== you) {
       const o = p.owner;
       col = ST[o.status] || '#ffffff';
-      if (o.status === 'need' || o.status === 'approve') r = p.r + 1.2 * (0.5 + 0.5 * Math.sin(time * 3 + o.seed));
+      if (waits(o)) r = p.r + 1.2 * (0.5 + 0.5 * Math.sin(time * 3 + o.seed));
       if (o.flash) r += o.flash * 1.8;
     }
     if (p.owner === you && p.hub) return; // your circle is drawn by drawMe
@@ -1001,7 +1016,7 @@ function draw(time) {
   for (const a of agents) redrawCluster(a);
   for (const { a, stat, detail, desc, px, py, pw, ph } of agentLabels) {
     const open = selected === a.id;
-    pill(px, py, pw, ph, 1, open ? 'rgba(255,255,255,0.45)' : (a.status === 'need' || a.status === 'approve') ? ST[a.status] + '66' : null, a.tipBg ?? TIP_BG);
+    pill(px, py, pw, ph, 1, open ? 'rgba(255,255,255,0.45)' : waits(a) ? ST[a.status] + '66' : null, a.tipBg ?? TIP_BG);
     ctx.textAlign = 'left';
     ctx.font = '600 11.5px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.94)';
     ctx.fillText(desc, px + 10, a.y - 1);
@@ -1309,10 +1324,12 @@ function renderPanel() {
     if (focused) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
   }
   panel.querySelectorAll('[data-act]').forEach(b => b.onclick = () => onAction(a, b.dataset.act));
+  panel.querySelectorAll('.step').forEach(b => b.onclick = () => goStep(a, +b.dataset.step));
   panel.querySelectorAll('.opt').forEach(b => b.onclick = () => pickOption(a, +b.dataset.q, +b.dataset.o));
   panel.querySelectorAll('input.other').forEach(el => {
     el.oninput = () => { const d = answerDraft(a.question); if (d[+el.dataset.q]) d[+el.dataset.q].text = el.value; };
-    el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); onAction(a, 'answer'); } };
+    // Enter goes to the next question, and sends the answers on the last one
+    el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); onAction(a, +el.dataset.q < a.question.questions.length - 1 ? 'next' : 'answer'); } };
   });
   if (focusedAns) { const el = panel.querySelector('#' + focusedAns); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   panel.querySelectorAll('.fold').forEach(f => f.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction(a, f.dataset.act); } }));
@@ -1363,19 +1380,30 @@ function answerDraft(q) {
   if (!d || d.length !== q.questions.length) { d = q.questions.map(() => ({ values: [], text: '' })); answerDrafts.set(q.requestId, d); }
   return d;
 }
+// which question of each open card is on screen: one question at a time, as steps "1 of n"
+const answerStep = new Map(); // requestId → index
+const stepOf = q => Math.min(Math.max(0, answerStep.get(q.requestId) ?? 0), q.questions.length - 1);
+const hasAnswer = x => x.values.length > 0 || !!x.text.trim();
 function askForm(a, q) {
   const d = answerDraft(q);
+  const i = stepOf(q), n = q.questions.length, x = q.questions[i], last = i === n - 1;
   return `<div class="section"><h4>${esc(t('questionForYou'))}</h4>
     <div class="ask">${q.ctx ? `<div class="ctx">${esc(q.ctx)}</div>` : ''}
       ${q.agentName ? `<div class="note" style="margin:0 0 8px">${esc(t('askedBySub', { agent: q.agentName }))}</div>` : ''}
-      ${q.questions.map((x, i) => `<div class="qa">
-        <p>${esc(x.q)}${x.multi ? ` <span class="note">· ${esc(t('pickMany'))}</span>` : ''}</p>
-        ${x.opts.length ? `<div class="opts">${x.opts.map((o, k) => `<button class="opt ${d[i].values.includes(o.label) ? 'on' : ''}" data-q="${i}" data-o="${k}" ${o.description ? `title="${esc(o.description)}"` : ''}>${esc(o.label)}</button>`).join('')}</div>` : ''}
-        <input class="other" id="ans-${i}" data-q="${i}" placeholder="${esc(t('otherAnswer'))}" value="${esc(d[i].text)}" />
-      </div>`).join('')}
-      <div class="row"><button class="btn primary" data-act="answer">${esc(t('submitAnswer'))}</button><button class="btn danger" data-act="decline">${esc(t('declineAsk'))}</button><button class="btn" data-act="open">${esc(t('openSession'))}</button></div>
+      ${n > 1 ? `<div class="steps"><span class="of">${esc(t('stepOf', { i: i + 1, n }))}</span>${q.questions.map((_, k) => `<button class="step ${k === i ? 'cur' : hasAnswer(d[k]) ? 'done' : ''}" data-step="${k}" aria-label="${esc(t('stepOf', { i: k + 1, n }))}" ${k === i ? 'aria-current="step"' : ''}>${k + 1}</button>`).join('')}</div>` : ''}
+      <p>${esc(x.q)}${x.multi ? ` <span class="note">· ${esc(t('pickMany'))}</span>` : ''}</p>
+      ${x.opts.length ? `<div class="opts">${x.opts.map((o, k) => `<button class="opt ${d[i].values.includes(o.label) ? 'on' : ''}" data-q="${i}" data-o="${k}" ${o.description ? `title="${esc(o.description)}"` : ''}>${esc(o.label)}</button>`).join('')}</div>` : ''}
+      <input class="other" id="ans-${i}" data-q="${i}" placeholder="${esc(t('otherAnswer'))}" value="${esc(d[i].text)}" />
+      <div class="row">${i > 0 ? `<button class="btn" data-act="prev">${esc(t('prevQuestion'))}</button>` : ''}<button class="btn primary" data-act="${last ? 'answer' : 'next'}">${esc(t(last ? 'submitAnswer' : 'nextQuestion'))}</button><button class="btn danger" data-act="decline">${esc(t('declineAsk'))}</button><button class="btn" data-act="open">${esc(t('openSession'))}</button></div>
       <div class="note">${esc(t('hostConfirms'))}</div>
     </div></div>`;
+}
+/** Show question `i` of the open card. */
+function goStep(a, i) {
+  const q = a.question;
+  if (!q?.requestId) return;
+  answerStep.set(q.requestId, Math.min(Math.max(0, i), q.questions.length - 1));
+  renderPanel();
 }
 function permissionCard(p) {
   return `<div class="section"><h4>${esc(t('permissionNeeded'))}</h4>
@@ -1394,6 +1422,8 @@ function pickOption(a, i, k) {
   const d = answerDraft(q)[i];
   const on = d.values.includes(o.label);
   d.values = x.multi ? (on ? d.values.filter(v => v !== o.label) : [...d.values, o.label]) : (on ? [] : [o.label]);
+  // picking the answer to a single-choice question moves on to the next question
+  if (!x.multi && !on && !d.text.trim() && i < q.questions.length - 1) return goStep(a, i + 1);
   renderPanel();
 }
 async function answer(a, decline) {
@@ -1408,12 +1438,13 @@ async function answer(a, decline) {
     return vals.length ? vals : null;
   });
   const r = await act(a, { action: 'answer', requestId: q.requestId, answers }, decline ? '#ff6b9a' : YOU_SIGNAL, t(decline ? 'toastDeclined' : 'toastAnswered'));
-  if (r?.ok) answerDrafts.delete(q.requestId);
+  if (r?.ok) { answerDrafts.delete(q.requestId); answerStep.delete(q.requestId); }
 }
 
 function onAction(a, k) {
   if (k === 'close') return select(null);
   if (k === 'answer' || k === 'decline') return answer(a, k === 'decline');
+  if (k === 'next' || k === 'prev') return a.question && goStep(a, stepOf(a.question) + (k === 'next' ? 1 : -1));
   if (k === 'allow-once' || k === 'allow-session' || k === 'deny') {
     if (!a.permission?.requestId) return;
     return act(a, { action: 'permission', requestId: a.permission.requestId, decision: k }, k === 'deny' ? '#ff6b9a' : YOU_SIGNAL, t(k === 'deny' ? 'toastDenied' : 'toastAllowed'));
