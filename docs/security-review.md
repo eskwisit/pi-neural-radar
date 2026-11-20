@@ -24,8 +24,8 @@ than given line numbers so the notes stay correct while the code changes.
 
 SECURITY.md lists `desktop.control` in the High tier. With it, the plugin can read every recent
 session's transcript and act on sessions: open one, send a message to the agent, approve or reject
-a plan, and stop or abort a turn. The plugin only reads on its own. Every acting operation starts
-from a click in its drawer, and the stop, abort and plan actions add an extra confirmation (see
+a plan, answer a question card or tool permission prompt, and stop or abort a turn. The plugin only reads on its own. Every acting operation starts
+from a click in its drawer, and the stop, abort, plan, answer and permission actions add an extra confirmation (see
 below). The review still has to treat it as High: the tier is about capability, not intent.
 
 ## Permissions matrix
@@ -33,11 +33,13 @@ below). The review still has to treat it as High: the tier is about capability, 
 | Permission | Used for | Host calls | Where |
 |---|---|---|---|
 | `ui.view` | The radar view docked in the work panel, which opens automatically according to the `autoOpen` setting or from the command | `pi.ui.revealView({ viewId: "radar" })` | `maybeReveal()` (automatic, after the first poll only, with a 30 s cooldown on "started working"), and the `neural-radar.open` command registered in `onLoad()` |
-| `desktop.control` | **Read:** session list, agent status, transcripts, subagents (read from the transcript), pending plans | `pi.desktop.invoke` with `session/list`, `agent/getStatus`, `session/get` (`messageLimit: 60`), `plans/pending` | `poll()` |
+| `desktop.control` | **Read:** session list, agent status, transcripts, subagents (read from the transcript), pending plans, open question cards and tool permission prompts | `pi.desktop.invoke` with `session/list`, `agent/getStatus`, `session/get` (`messageLimit: 60`), `plans/pending`, `agent/pendingInteractive` (running sessions only; PI-Desktop 0.23+) | `poll()`, `pendingInteractive()` |
 | | **Act, only on a click in the drawer:** | `session/open` | `act()` with action `open` |
 | | | `agent/prompt` | `act()` with action `send` |
 | | | `agent/stop`, `agent/abort` | `act()` with action `stop` or `abort` (two-step confirmation in the view) |
 | | | `plans/resolve` **sent with `confirm: true`** | `act()` with action `plan` (Approve or Reject) |
+| | | `agent/askTool/resolve` **sent with `confirm: true`** | `act()` with action `answer` (Answer or Decline) |
+| | | `tool/resolvePermission` **sent with `confirm: true`** | `act()` with action `permission` (Allow once, Allow for this chat, Deny) |
 
 Host APIs called without a permission of their own (base plugin API, as far as the author knows; a
 reviewer should confirm this against host policy):
@@ -74,6 +76,9 @@ action were removed so that the manifest uses only permissions the audit knows. 
 | Open a session | drawer **Open session** → `act({ action: "open" })` | sessionId | `session/open` | `desktop.control` | one click | one call | none |
 | Send a message to the agent | drawer **Send to agent** or Ctrl/⌘+Enter → `act({ action: "send" })` | the text the user typed | `agent/prompt` `{ sessionId, content }`; to a running agent (or on `AGENT_BUSY`) the text waits in an in-memory queue (at most 20 per session) and is sent by `poll()` when the turn ends | `desktop.control` | one click; empty text is refused | one call | none |
 | Approve or reject a plan | drawer **Approve** / **Reject** → `act({ action: "plan" })` | the proposal ids shown in the drawer | `plans/resolve` with **`confirm: true`** | `desktop.control` | one click on a visible, specific plan. Refused when `proposalId`, `turnId` or `toolCallId` is missing | one call. Approve uses the session's own permission mode when it is `ask`, `accept-edits` or `auto`, and `ask` otherwise; Reject sends no mode | none |
+| Read question cards and permission prompts | `poll()` → `pendingInteractive()` | `agent/pendingInteractive` `{ sessionId }`: open asktool requests (request id, questions, options, subagent name) and tool permission requests (request id, tool name, args preview, reason, risk, subagent name) | In-memory model → view (`radar.state`) | `desktop.control` | none (read-only) | Only for sessions whose agent runs; at most 8 options per question; permission reason 300 chars, args preview 600. When the host answers `operation is not exposed` (before 0.23) the read is not tried again until the plugin reloads; the transcript fallback then shows asktool questions without a request id | same |
+| Answer a question card | drawer **Answer** / **Decline** → `act({ action: "answer" })` | the request id shown in the drawer and the options you picked or typed | `agent/askTool/resolve` `{ sessionId, requestId, answers }` with **`confirm: true`** | `desktop.control` | one click on a visible, specific question card, **then the host's own Allow / Deny dialog** | one call. Refused without a request id, or when `answers` is not a non-empty list of string lists (≤ 20 items, ≤ 4000 chars each) or nulls | none |
+| Answer a permission prompt | drawer **Allow once** / **Allow for this chat** / **Deny** → `act({ action: "permission" })` | the request id shown in the drawer | `tool/resolvePermission` `{ requestId, decision }` with **`confirm: true`** | `desktop.control` | one click on a visible, specific prompt, **then the host's own Allow / Deny dialog** | one call. Only `allow-once`, `allow-session` and `deny` are sent; there is no "always allow" | none |
 | Stop a turn | drawer **Stop**, then **Confirm stop** → `act({ action: "stop" })` | sessionId | `agent/stop` | `desktop.control` | **two clicks within 3 s**; disabled while the agent is finished or waiting for your reply | one call; the whole agent (no per-subagent stop) | none |
 | Abort a turn | drawer **Abort**, then **Confirm abort** → `act({ action: "abort" })` | sessionId | `agent/abort` | `desktop.control` | **two clicks within 3 s**; disabled as for Stop | one call | none |
 | React to host events | `pi.events.on` → `pollSoon()` / `readSettings()` | none | schedules a poll 150 ms later, or re-reads the setting | none | none | at most one poll in flight (`inFlight`, `rerun`) | `onUnload()` calls `pi.events.off` with the same handlers |
@@ -112,10 +117,15 @@ here as well.
   within that window sends `agent/stop` or `agent/abort`. The confirmation is in the view;
   `act()` itself does not ask again, and it can only be reached through the plugin's own view
   (`radar.action`).
-- **Plan approval:** `plans/resolve` is the only operation the host treats as dangerous, so `op()`
-  sends it with `confirm: true`. The user's click on **Approve** or **Reject** for the specific plan
+- **Plan approval:** `plans/resolve` is a dangerous host operation, so `op()` sends it with
+  `confirm: true`. The user's click on **Approve** or **Reject** for the specific plan
   shown in the drawer is the confirmation. Approving never escalates: it keeps the session's own
   permission mode and falls back to `ask` for any unknown mode.
+- **Question cards and permission prompts:** `agent/askTool/resolve` and `tool/resolvePermission`
+  are dangerous host operations: `op()` sends them with `confirm: true`, and PI-Desktop then shows
+  its own dialog naming the plugin, the operation and its arguments. Nothing is sent unless the
+  user allows it there. The drawer click on the specific card or prompt comes first. A permission
+  decision never goes beyond "allow for this chat", the same choices PI-Desktop's own card offers.
 - Send and Open session are single, visible clicks. They act only on the session whose
   drawer is open.
 
@@ -134,7 +144,11 @@ here as well.
   proposal. None of them reaches the host;
 - bounds: 8 candidate sessions plus the active one, `messageLimit: 60`, 6-hour staleness, excerpt
   lengths. A poll only sends read operations;
-- `plans/resolve` carries `confirm: true`; the permission mode never escalates;
+- `plans/resolve`, `agent/askTool/resolve` and `tool/resolvePermission` carry `confirm: true`; the
+  permission mode never escalates; malformed answers, unknown permission decisions and missing
+  request ids never reach the host; a declined host dialog comes back as `ok: false`;
+- `agent/pendingInteractive` is read without `confirm`, only for running sessions, and is not
+  retried after the host says it does not have it (`tests/interactive.test.js`);
 - unload: the same event handlers are removed, the command is unregistered, and no timer is left
   behind, even when a poll was in flight or an event or action arrives after unload.
 
@@ -154,10 +168,9 @@ here as well.
 
 ## Known limits
 
-- Question cards an agent opens mid-turn (`asktool`) and tool-permission prompts cannot be reached.
-  `agent/askTool/resolve` and `tool/resolvePermission` exist, but the request ids they need only
-  come from `agent/pendingInteractive`, which is not a plugin operation. A pending tool call is not
-  in the transcript until it completes. The radar does not try to answer either.
+- Question cards an agent opens mid-turn (`asktool`) and tool-permission prompts need PI-Desktop
+  0.23 or later (`agent/pendingInteractive`). Before that, a question card is read from the
+  transcript and can only be answered in the session, and permission prompts are not visible.
 - Stop and Abort act on the whole agent. There is no per-subagent stop for plugins.
 - "Needs your reply" is a heuristic over the agent's last message: closing paragraph, `?` or an
   asking phrase. Code blocks, inline code, tables and headings are ignored.
