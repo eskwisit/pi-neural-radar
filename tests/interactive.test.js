@@ -63,7 +63,7 @@ describe("poll: pending question cards and permission prompts", () => {
     const { t } = fresh({ respond: host({ interactive: { asks: [ASK], permissions: [] }, messages }) });
     await t.poll();
     const [a] = t.model.agents;
-    assert.equal(a.status, "need");
+    assert.equal(a.status, "answer"); // "Awaiting answer", not "Needs you"
     assert.equal(a.question.requestId, "ask-1");
     assert.equal(a.question.q, "Which database?");
     assert.equal(a.question.more, 1);
@@ -100,7 +100,7 @@ describe("poll: pending question cards and permission prompts", () => {
     const { pi, t } = fresh({ respond: host({ interactive: notExposed(), messages }) });
     await t.poll();
     const [a] = t.model.agents;
-    assert.equal(a.status, "need");
+    assert.equal(a.status, "answer");
     assert.equal(a.question.q, "Proceed?");
     assert.equal(a.question.requestId, undefined);
     assert.equal(a.permission, null);
@@ -113,6 +113,20 @@ describe("poll: pending question cards and permission prompts", () => {
     await t.poll();
     await t.poll();
     assert.equal(pi.invocations.filter((r) => r.operation === "agent/pendingInteractive").length, 2);
+  });
+
+  it("notifies when a question card opens, and again for the next one", async () => {
+    let asks = [];
+    const { pi, t } = fresh({ respond: (req) => host({ interactive: { asks, permissions: [] } })(req) });
+    await t.poll(); // the first poll only learns the baseline
+    asks = [ASK];
+    await t.poll();
+    asks = [{ ...ASK, requestId: "ask-2" }];
+    await t.poll();
+    await new Promise((r) => setTimeout(r, 10));
+    const notices = pi.notifications.filter((n) => n.kind === "notice");
+    assert.equal(notices.length, 2);
+    assert.match(notices[0].title, /has a question for you/);
   });
 
   it("notifies again for a new permission prompt while the agent already needed you", async () => {
