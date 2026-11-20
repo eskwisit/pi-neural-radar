@@ -83,7 +83,7 @@ the host does not record every model call of a subagent in the transcript.
 open beneath it; an open one scrolls inside itself, so the drawer never scrolls. Opening the
 drawer from a subagent unfolds Subagents on it. The drawer offers:
 
-- **Answer** a question card the agent opened mid-turn: the agent shows **Awaiting answer** in
+- **Answer** a question card the agent opened mid-turn: the agent shows **Question for you** in
   amber, and the drawer asks one question at a time (`1 of 3`, with a numbered step per question).
   Picking the answer to a single-choice question moves on to the next one; **Next**, **Back** or a
   step number move between them, and **Answer** on the last one sends them all. You can type your
