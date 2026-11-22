@@ -71,7 +71,7 @@ glowing neuron core.
 
 ## Stepping in
 
-Click an agent (its neuron or its tooltip) to toggle its drawer. While the
+Click an agent (its neuron or its tooltip) to open its drawer; click its neuron again to close it. While the
 drawer is open, the radar slides so the agent and its subagents sit in the middle of the space the
 drawer leaves visible, however far they are from you.
 
@@ -100,8 +100,8 @@ drawer from a subagent unfolds Subagents on it. The drawer offers:
 - **Send to agent** (⌘↵): an idle or finished agent gets the message at once and the session
   continues (the box is titled **Continue the session** on a finished one). A running agent cannot
   take a new turn, so the message waits in a queue shown under the box and goes out when the turn ends, one per
-  turn. A notice says whether it was sent or queued and the drawer closes; if the message is not
-  taken, the drawer stays open with your text. A notice also tells you when a queued message goes
+  turn. A notice says whether it was sent or queued and the drawer stays open; if the message is
+  not taken, your text comes back in the box. A notice also tells you when a queued message goes
   out. The queue lives in the plugin: it is lost when the plugin reloads
 - **Open session**, **Stop** (at the next safe point) and **Abort** (now); Stop and Abort ask for a
   second click
