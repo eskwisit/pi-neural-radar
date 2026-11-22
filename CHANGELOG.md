@@ -1,11 +1,12 @@
 # Changelog
 
-## 0.45.1
+## 0.45.3
 
 ### Fixes
 
-- **view:** label an open question card as question for you (`e166fc9`)
+- **view:** keep the drawer open when clicking the open agent's tooltip (`7f80e24`)
+- **view:** keep the drawer open after sending a message (`05ee161`)
 
 ### Documentation
 
-- **readme:** use the question for you label (`ad89e0c`)
+- **readme:** describe tooltip clicks and sending with the drawer open (`903f9e3`)
