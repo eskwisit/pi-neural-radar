@@ -1168,7 +1168,7 @@ function hitTest(x, y) {
   if (Math.hypot(x - you.x, y - you.y) <= ME_R + 6) return { you: true };
   // tooltips can overlap: the one drawn last (on top) wins
   const onLabel = agents.filter(a => inRect(a.label)).sort((p, q) => q.label.z - p.label.z)[0];
-  if (onLabel) return { a: onLabel };
+  if (onLabel) return { a: onLabel, tip: true };
   for (const a of order) if (Math.hypot(x - a.x, y - a.y) < 42 * K) return { a };
   for (const a of order) for (const s of onRadar(a)) if (Math.hypot(x - s.x, y - s.y) < 20 * K || (s.label?.shown && inRect(s.label))) return { a, s };
   return null;
@@ -1183,7 +1183,7 @@ canvas.addEventListener('click', e => {
   const h = hitTest(e.clientX, e.clientY);
   if (h?.you) { pickMe(); return; }
   if (!h) { select(null); return; }
-  if (h.a && !h.s && selected === h.a.id) { select(null); return; } // clicking the open agent again closes the drawer
+  if (h.a && !h.s && selected === h.a.id) { if (!h.tip) select(null); return; } // clicking the open agent's node again closes the drawer; its tooltip keeps it open
   select(h.a.id, h.s?.id || null);
 });
 canvas.addEventListener('contextmenu', e => {
